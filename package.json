@@ -1,0 +1,44 @@
+{
+  "name": "obsidian-modern-draw",
+  "version": "0.6.30",
+  "description": "Seamless freehand drawing directly over ordinary Obsidian Markdown notes.",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "import:notes": "node scripts/import-notes.mjs",
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "deploy": "npm run build && node scripts/install-plugin.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "drawing",
+    "handwriting",
+    "markdown",
+    "plugin"
+  ],
+  "author": "Saint",
+  "license": "MIT",
+  "devDependencies": {
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
+    "@types/node": "^22.15.30",
+    "@xmldom/xmldom": "^0.9.12",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.5",
+    "obsidian": "latest",
+    "playwright-core": "^1.65.1",
+    "tsx": "^4.19.4",
+    "turndown": "^7.2.5",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.8.1",
+    "fflate": "^0.8.3",
+    "lz-string": "^1.5.0",
+    "perfect-freehand": "^1.2.3"
+  }
+}

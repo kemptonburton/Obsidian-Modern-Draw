@@ -1,0 +1,7 @@
+/.tmp-obsidian-inspect/
+/node_modules/
+/main.js
+.obsidian/
+*.ink.json
+*.map
+.DS_Store

@@ -1,0 +1,9 @@
+{
+  "id": "modern-draw",
+  "name": "Modern Draw",
+  "version": "0.6.30",
+  "minAppVersion": "1.5.0",
+  "description": "Draw and handwrite seamlessly over normal Markdown notes.",
+  "author": "Saint",
+  "isDesktopOnly": false
+}
