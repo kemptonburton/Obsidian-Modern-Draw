@@ -140,7 +140,7 @@
   content: "";
   position: absolute;
   inset-block: 0;
-  left: -5px;
+  left: calc(-1 * var(--modern-draw-guide-inset, 28px));
   width: calc(1px / var(--modern-draw-note-zoom, 1));
   background: var(--text-muted, currentColor);
   opacity: 0.15;

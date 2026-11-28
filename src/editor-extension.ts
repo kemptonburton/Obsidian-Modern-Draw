@@ -208,6 +208,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private workspaceOrigin = 0;
       private workspaceWidth = 0;
       private workspaceLeft = 0;
+      private alignScrollablePage = false;
       private pinchFrame: number | null = null;
       private pinchZoom?: { zoom: number; anchor: NoteZoomAnchor };
       private surfaceUndoStack: SurfaceHistoryAction[] = [];
@@ -385,6 +386,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.unsubscribeNoteLayout = dependencies.noteViews.onLayoutChange((path, layout) => {
           if (path !== this.sourcePath) return;
           this.noteLayout = layout;
+          this.alignScrollablePage = layout === "left-scroll";
           this.updateControls();
           this.floatingImages.refresh();
           this.requestRender();
@@ -481,6 +483,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.extent.remove();
         this.view.scrollDOM.classList.remove("modern-draw-left-overflow", "modern-draw-zoomed");
         this.view.scrollDOM.style.removeProperty("--modern-draw-left-overflow");
+        this.view.scrollDOM.style.removeProperty("--modern-draw-guide-inset");
         this.inkLayer.remove();
         this.palmRest.remove();
         this.controls.destroy();
@@ -503,6 +506,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.sourcePath = sourcePath;
         const preferences = sourcePath ? dependencies.noteViews.load(sourcePath) : {};
         this.noteLayout = preferences.layout ?? "center";
+        this.alignScrollablePage = this.noteLayout === "left-scroll";
         this.applyZoom(preferences.zoom ?? 1);
         this.unsubscribeDocument?.();
         this.unsubscribeDocument = null;
@@ -2475,23 +2479,33 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
             extend(region.bounds.left + horizontal.delta, region.bounds.right + horizontal.delta);
           }
         }
-        const left = horizontal ? this.workspaceLeft
-          : Math.ceil(Math.max(0, 8 - baseOrigin - leftEdge));
-        const shift = left - this.workspaceLeft;
         const scroll = this.view.scrollDOM;
+        const sideRoom = this.noteLayout === "left-scroll" ? scroll.clientWidth : 0;
+        const left = horizontal ? this.workspaceLeft
+          : Math.ceil(Math.max(sideRoom, 8 - baseOrigin - leftEdge));
+        const shift = left - this.workspaceLeft;
         const scrollLeft = scroll.scrollLeft;
+        if (sideRoom) {
+          const guideInset = Math.max(0, Math.min(28, baseOrigin - 4));
+          scroll.style.setProperty("--modern-draw-guide-inset", `${guideInset}px`);
+        }
         if (shift !== 0) {
           this.workspaceLeft = left;
           scroll.classList.toggle("modern-draw-left-overflow", left > 0);
           scroll.style.setProperty("--modern-draw-left-overflow", `${left}px`);
         }
         this.workspaceOrigin = baseOrigin + left;
-        const minimumWidth = this.noteLayout === "left-scroll" ? scroll.clientWidth * 2 : scroll.clientWidth;
+        const minimumWidth = scroll.clientWidth + (sideRoom ? left + sideRoom : 0);
         this.workspaceWidth = Math.ceil(Math.max(minimumWidth, horizontal?.originalWidth ?? 0,
           this.workspaceOrigin + rightEdge + 160));
         this.extent.style.width = `${this.workspaceWidth}px`;
+        if (this.alignScrollablePage && sideRoom) {
+          this.alignScrollablePage = false;
+          scroll.scrollLeft = left;
+        } else if (shift !== 0 && (sideRoom || scrollLeft > 1)) {
+          scroll.scrollLeft = Math.max(0, scrollLeft + shift);
+        }
         if (shift !== 0) {
-          if (scrollLeft > 1) scroll.scrollLeft = Math.max(0, scrollLeft + shift);
           this.floatingImages.refresh();
         }
       }

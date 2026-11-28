@@ -474,18 +474,28 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       const { scrollDOM, contentDOM } = view;
       const guide = getComputedStyle(contentDOM, "::before");
       const pageLeft = contentDOM.getBoundingClientRect().left;
-      scrollDOM.scrollLeft = 110;
-      const result = { pageLeft, shift: contentDOM.getBoundingClientRect().left - pageLeft,
-        opacity: Number(guide.opacity), guideWidth: guide.width,
-        available: scrollDOM.scrollWidth - scrollDOM.clientWidth, viewportWidth: scrollDOM.clientWidth };
-      scrollDOM.scrollLeft = 0;
+      const home = scrollDOM.scrollLeft;
+      const leftAvailable = home;
+      const rightAvailable = scrollDOM.scrollWidth - scrollDOM.clientWidth - home;
+      scrollDOM.scrollLeft = home - 110;
+      const shiftWhenPanningLeft = contentDOM.getBoundingClientRect().left - pageLeft;
+      scrollDOM.scrollLeft = home + 110;
+      const shiftWhenPanningRight = contentDOM.getBoundingClientRect().left - pageLeft;
+      const result = { pageLeft, shiftWhenPanningLeft, shiftWhenPanningRight, leftAvailable, rightAvailable,
+        opacity: Number(guide.opacity), guideWidth: guide.width, guideLeft: pageLeft + parseFloat(guide.left),
+        guideInset: -parseFloat(guide.left), viewportLeft: scrollDOM.getBoundingClientRect().left,
+        viewportWidth: scrollDOM.clientWidth };
+      scrollDOM.scrollLeft = home;
       return result;
     });
     assert.equal(pan.pageLeft, leftOrigin);
-    assert.ok(pan.available >= pan.viewportWidth - 1);
-    assert.equal(pan.shift, -110);
+    assert.ok(pan.leftAvailable >= pan.viewportWidth - 1);
+    assert.ok(pan.rightAvailable >= pan.viewportWidth - 1);
+    assert.equal(pan.shiftWhenPanningLeft, 110);
+    assert.equal(pan.shiftWhenPanningRight, -110);
     assert.equal(pan.guideWidth, "1px");
     assert.equal(pan.opacity, 0.15);
+    assert.ok(pan.guideInset > 5 && pan.guideLeft >= pan.viewportLeft);
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left-scroll");
 
     await page.locator('.modern-draw-toolbar [aria-label="Zoom in"]').tap();
