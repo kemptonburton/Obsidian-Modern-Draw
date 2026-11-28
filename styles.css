@@ -136,11 +136,11 @@
   max-width: var(--file-line-width);
 }
 
-.cm-scroller:has(> .modern-draw-ink-layer[data-layout="left-scroll"]) .cm-content::before {
+.cm-scroller:has(> .modern-draw-ink-layer:is([data-layout="left"], [data-layout="left-scroll"])) .cm-content::before {
   content: "";
   position: absolute;
   inset-block: 0;
-  left: calc(-1 * var(--modern-draw-guide-inset, 28px));
+  left: calc(-1 * var(--modern-draw-guide-inset, 36px));
   width: calc(1px / var(--modern-draw-note-zoom, 1));
   background: var(--text-muted, currentColor);
   opacity: 0.15;

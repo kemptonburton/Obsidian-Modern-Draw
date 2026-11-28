@@ -208,6 +208,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private workspaceOrigin = 0;
       private workspaceWidth = 0;
       private workspaceLeft = 0;
+      private workspaceSideRoom = 0;
       private alignScrollablePage = false;
       private pinchFrame: number | null = null;
       private pinchZoom?: { zoom: number; anchor: NoteZoomAnchor };
@@ -385,8 +386,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         });
         this.unsubscribeNoteLayout = dependencies.noteViews.onLayoutChange((path, layout) => {
           if (path !== this.sourcePath) return;
+          this.alignScrollablePage = layout === "left-scroll" && this.noteLayout === "center";
           this.noteLayout = layout;
-          this.alignScrollablePage = layout === "left-scroll";
           this.updateControls();
           this.floatingImages.refresh();
           this.requestRender();
@@ -2481,12 +2482,12 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         }
         const scroll = this.view.scrollDOM;
         const sideRoom = this.noteLayout === "left-scroll" ? scroll.clientWidth : 0;
-        const left = horizontal ? this.workspaceLeft
-          : Math.ceil(Math.max(sideRoom, 8 - baseOrigin - leftEdge));
+        const naturalLeft = Math.ceil(Math.max(0, 8 - baseOrigin - leftEdge));
+        const left = horizontal ? this.workspaceLeft : naturalLeft + sideRoom;
         const shift = left - this.workspaceLeft;
         const scrollLeft = scroll.scrollLeft;
-        if (sideRoom) {
-          const guideInset = Math.max(0, Math.min(28, baseOrigin - 4));
+        if (this.noteLayout !== "center") {
+          const guideInset = Math.max(0, Math.min(36, baseOrigin + naturalLeft - 1));
           scroll.style.setProperty("--modern-draw-guide-inset", `${guideInset}px`);
         }
         if (shift !== 0) {
@@ -2499,12 +2500,14 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.workspaceWidth = Math.ceil(Math.max(minimumWidth, horizontal?.originalWidth ?? 0,
           this.workspaceOrigin + rightEdge + 160));
         this.extent.style.width = `${this.workspaceWidth}px`;
-        if (this.alignScrollablePage && sideRoom) {
+        if (this.alignScrollablePage && sideRoom && this.document) {
           this.alignScrollablePage = false;
-          scroll.scrollLeft = left;
-        } else if (shift !== 0 && (sideRoom || scrollLeft > 1)) {
+          // Keep the natural left margin, including space already reserved for ink.
+          scroll.scrollLeft = sideRoom;
+        } else if (shift !== 0 && (sideRoom || this.workspaceSideRoom || scrollLeft > 1)) {
           scroll.scrollLeft = Math.max(0, scrollLeft + shift);
         }
+        this.workspaceSideRoom = sideRoom;
         if (shift !== 0) {
           this.floatingImages.refresh();
         }

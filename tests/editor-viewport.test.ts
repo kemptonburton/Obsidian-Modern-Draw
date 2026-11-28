@@ -466,7 +466,13 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     await left.waitFor();
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left");
     assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), undefined);
+    await page.evaluate(`fixture.ink.append({
+      id: "left-margin", tool: "pen", color: "#123456", width: 2, opacity: 1, horizontalOrigin: 0,
+      anchor: {pos: 0, lineText: fixture.view.state.doc.line(1).text}, points: [{x: -56, y: 8, pressure: 0.5}]
+    }); fixture.view.scrollDOM.scrollLeft = 0;`);
+    await page.waitForFunction("fixture.view.scrollDOM.classList.contains('modern-draw-left-overflow')");
     const leftOrigin = await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left");
+    const leftGuide = await page.evaluate("getComputedStyle(fixture.view.contentDOM, '::before').left");
     await left.tap();
     await scrollableLeft.waitFor();
     const pan = await page.evaluate(() => {
@@ -495,8 +501,15 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.equal(pan.shiftWhenPanningRight, -110);
     assert.equal(pan.guideWidth, "1px");
     assert.equal(pan.opacity, 0.15);
-    assert.ok(pan.guideInset > 5 && pan.guideLeft >= pan.viewportLeft);
+    assert.equal(pan.guideInset, 36);
+    assert.ok(pan.guideLeft >= pan.viewportLeft);
+    assert.equal(pan.guideInset, -parseFloat(leftGuide as string));
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left-scroll");
+    await page.evaluate("fixture.noteViews.saveLayout('Test.md', 'left')");
+    await left.waitFor();
+    assert.equal(await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left"), leftOrigin);
+    await left.tap();
+    await scrollableLeft.waitFor();
 
     await page.locator('.modern-draw-toolbar [aria-label="Zoom in"]').tap();
     await page.waitForFunction("fixture.zoom() > 1");
