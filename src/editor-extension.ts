@@ -30,7 +30,8 @@ import { imageDeletionRanges } from "./image-syntax";
 import { resolveAnchor } from "./anchors";
 import { measureDrawingScale, scaleDrawingContent } from "./drawing-scale";
 import { ScaleNoteModal } from "./scale-note-modal";
-import { loadNoteZoom, noteLineOffset, saveNoteZoom } from "./note-zoom";
+import { noteLineOffset } from "./note-zoom";
+import type { NoteViewStore } from "./note-view";
 import { blankLineRemovalRange, markdownSpaceBoundary, removableBlankLinesBefore, spaceAnchorLineDelta, trailingInkSpace, type TrailingInkSpace } from "./markdown-space";
 import { fullySelectedLines, textRangeCoversInkLine } from "./text-ink-selection";
 import { floatingImagePointerMode } from "./selection-gesture";
@@ -55,6 +56,7 @@ export const inkEditorAction = StateEffect.define<InkEditorAction>();
 
 export interface InkEditorDependencies {
   app: App;
+  noteViews: NoteViewStore;
   controller: ModernDrawController;
   store: InkStore;
   regions: ReturnType<typeof registerRegionFeatures>;
@@ -140,6 +142,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private readonly resizeObserver: ResizeObserver;
       private readonly themeObserver: MutationObserver;
       private readonly unsubscribeController: () => void;
+      private readonly unsubscribeNoteLayout: () => void;
+      private noteLayout: CanvasLayout = "center";
       private readonly detachTouchGuard: () => void;
       private readonly toolSource = {};
       private readonly inkStyle: LocalInkStyle;
@@ -376,6 +380,13 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           this.updateControls();
           this.requestRender();
         });
+        this.unsubscribeNoteLayout = dependencies.noteViews.onLayoutChange((path, layout) => {
+          if (path !== this.sourcePath) return;
+          this.noteLayout = layout;
+          this.updateControls();
+          this.floatingImages.refresh();
+          this.requestRender();
+        });
 
         this.updateControls();
         void this.bindDocument();
@@ -452,6 +463,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         if (this.spaceDecorationFrame !== null) cancelAnimationFrame(this.spaceDecorationFrame);
         this.unsubscribeDocument?.();
         this.unsubscribeController();
+        this.unsubscribeNoteLayout();
         this.themeObserver.disconnect();
         this.resizeObserver.disconnect();
         this.view.dom.removeEventListener("pointerdown", this.onHostPointerDownCapture, true);
@@ -487,7 +499,9 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         const sourcePath = this.getSourcePath();
         this.endPinch();
         this.sourcePath = sourcePath;
-        this.applyZoom(sourcePath ? loadNoteZoom(dependencies.app, sourcePath) : 1);
+        const preferences = sourcePath ? dependencies.noteViews.load(sourcePath) : {};
+        this.noteLayout = preferences.layout ?? "center";
+        this.applyZoom(preferences.zoom ?? 1);
         this.unsubscribeDocument?.();
         this.unsubscribeDocument = null;
         this.document = null;
@@ -499,6 +513,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
 
         const document = await dependencies.store.getDocument(sourcePath);
         if (this.destroyed || this.sourcePath !== sourcePath) return;
+        this.noteLayout = dependencies.noteViews.initializeLayout(sourcePath, document.canvasLayout ?? "center");
         this.document = document;
         this.clearSelection();
         this.unsubscribeDocument = document.subscribe((persist) => {
@@ -709,12 +724,13 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       }
 
       private canvasLayout(): CanvasLayout {
-        return this.document?.canvasLayout ?? "center";
+        return this.noteLayout;
       }
 
       private toggleLayout(): void {
+        if (!this.document || !this.sourcePath) return;
         this.initializeHorizontalOrigins();
-        this.document?.setCanvasLayout(this.canvasLayout() === "center" ? "left" : "center");
+        dependencies.noteViews.saveLayout(this.sourcePath, this.noteLayout === "center" ? "left" : "center");
       }
 
       private initializeHorizontalOrigins(): void {
@@ -788,7 +804,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       }
 
       private persistZoom(): void {
-        if (this.sourcePath) saveNoteZoom(dependencies.app, this.sourcePath, this.noteZoom);
+        if (this.sourcePath) dependencies.noteViews.saveZoom(this.sourcePath, this.noteZoom);
       }
 
       private onPinch({ clientX, clientY, deltaX, deltaY, scale }: PinchGesture): void {

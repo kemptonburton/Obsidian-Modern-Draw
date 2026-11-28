@@ -23,7 +23,7 @@ import { notePdfImportDestination, PdfImportModal } from "./pdf-import";
 import { ModernDrawSettingTab } from "./settings";
 import { NoteImportModal } from "./import-modal";
 import { registerRegionFeatures } from "./pdf-viewer";
-import { moveNoteZoom } from "./note-zoom";
+import { NoteViewStore } from "./note-view";
 
 export default class ModernDrawPlugin extends Plugin {
   settings: ModernDrawSettings = { ...DEFAULT_SETTINGS };
@@ -33,6 +33,7 @@ export default class ModernDrawPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    const noteViews = new NoteViewStore(this.app);
     this.addCommand({ id: "import-notes", name: "Import Excalidraw, OneNote, or Notability notes", callback: () => new NoteImportModal(this.app, this).open() });
     this.controller = new DrawingController(this.settings);
     this.store = new InkStore(this.app, () => this.settings, (message, error) => {
@@ -56,6 +57,7 @@ export default class ModernDrawPlugin extends Plugin {
     this.registerEditorExtension(
       createInkEditorExtension({
         app: this.app,
+        noteViews,
         controller: this.controller,
         store: this.store,
         regions,
@@ -81,7 +83,7 @@ export default class ModernDrawPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         if (!(file instanceof TFile)) return;
         if (file.extension === "md" || file.extension === "canvas") {
-          if (file.extension === "md") moveNoteZoom(this.app, oldPath, file.path);
+          if (file.extension === "md") noteViews.move(oldPath, file.path);
           if (this.settings.importScaleReference === oldPath) void this.updateSetting("importScaleReference", file.path);
           void this.store.renameDocument(oldPath, file.path);
         } else {

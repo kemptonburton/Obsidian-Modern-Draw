@@ -60,6 +60,7 @@ export class InkDocument {
     this.noteLayout = layout;
   }
 
+  /** Import default or legacy layout, used only to initialize a device's view of this note. */
   get canvasLayout(): CanvasLayout | undefined {
     return this.noteLayout;
   }

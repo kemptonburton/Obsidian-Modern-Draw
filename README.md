@@ -6,7 +6,7 @@ Write with an Apple Pencil, sketch over a Markdown note, or mark up a PDF slide 
 
 - **Draw and annotate.** Use a pen, highlighter, or stroke eraser with a mouse or stylus. Save frequently used colors and widths as presets. Turn off pressure-based line width for a consistent stroke.
 - **Work with text and ink together.** Select text and ink in the same rows, delete them together, or restore both with Undo. Use the lasso to select and move ink, text, and images, or insert space between sections.
-- **Arrange the page.** Float an image out of the text flow, then move or resize it. Choose a centered or left-aligned layout for each note. Zoom from 10% to 250% with pinch, toolbar buttons, or Ctrl/Cmd+wheel. Each device remembers its zoom per note.
+- **Arrange the page.** Float an image out of the text flow, then move or resize it. Choose a centered or left-aligned layout and zoom from 10% to 250% with pinch, toolbar buttons, or Ctrl/Cmd+wheel. Each device keeps its own layout and zoom for each note in local storage, under its Obsidian Sync device name when available.
 - **Mark up PDFs and slides.** Import PDF pages into a note or onto Canvas. In notes, page-relative ink follows the image when its display width changes. On desktop, export a note to PDF or a Canvas to an image.
 - **Reuse a region.** Copy a rectangle from a note, Canvas, or PDF into another note. Double-click the capture to jump back to its source.
 

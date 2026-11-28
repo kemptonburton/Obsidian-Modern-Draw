@@ -21,6 +21,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       import {DrawingController} from "./src/controller";
       import {createInkEditorExtension} from "./src/editor-extension";
       import {InkDocument} from "./src/ink-store";
+      import {NoteViewStore} from "./src/note-view";
       import {decodeInk, encodeInk} from "./src/ink-storage";
       import {DEFAULT_SETTINGS} from "./src/model";
 
@@ -37,13 +38,17 @@ test("note ink moves with the scroller and stays registered through mobile pinch
         return drawing;
       };
       const ink = getInk(owner.file.path);
-      const zooms = new Map();
+      const localStorage = new Map();
+      const sync = { deviceName: "Desktop" };
+      const app = {
+        workspace: {getActiveViewOfType: () => null},
+        internalPlugins: { getEnabledPluginById: () => sync },
+        loadLocalStorage: key => localStorage.get(key) ?? null,
+        saveLocalStorage: (key, value) => value === null ? localStorage.delete(key) : localStorage.set(key, value)
+      };
+      const noteViews = new NoteViewStore(app);
       const extension = createInkEditorExtension({
-        app: {
-          workspace: {getActiveViewOfType: () => null},
-          loadLocalStorage: key => zooms.get(key) ?? null,
-          saveLocalStorage: (key, value) => value === null ? zooms.delete(key) : zooms.set(key, value)
-        }, controller,
+        app, noteViews, controller,
         store: {getDocument: async path => getInk(path)},
         regions: {attachNote: () => ({
           surface: {screenRegions: () => [], setSelection() {}}, refresh() {}, destroy() {}
@@ -106,7 +111,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
         fill(...args);
       };
       window.fixture = {
-        view, canvas, controller, ink, zoom, zooms, painted, notes,
+        view, canvas, controller, ink, zoom, noteViews, painted, notes, sync,
         layout() {
           const bounds = (element) => {
             const {left, top, width, height} = element.getBoundingClientRect();
@@ -279,7 +284,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       const settled = await page.evaluate<typeof initial & { inkY: number }>("fixture.location()");
       assert.ok(Math.abs(settled.textY - initial.textY) < 3, JSON.stringify({ initial, settled }));
       assert.ok(Math.abs(settled.inkY - settled.textY) < 3, JSON.stringify(settled));
-      assert.equal(await page.evaluate("fixture.zooms.get('modern-draw-note-zoom:Test.md') ?? 1"), zoom);
+      assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').zoom"), zoom);
       if (zoom === 2) {
         written = await page.evaluate("fixture.drawAcrossLineBoundary()");
         assert.notEqual(written[0].anchor, written[1].anchor);
@@ -437,7 +442,8 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     const left = page.getByRole("button", { name: "Left-origin text canvas; switch to centered" });
     await centered.tap();
     await left.waitFor();
-    assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), "left");
+    assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left");
+    assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), undefined);
 
     await page.locator('.modern-draw-toolbar [aria-label="Zoom in"]').tap();
     await page.waitForFunction("fixture.zoom() > 1");
@@ -449,9 +455,22 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     await page.evaluate("fixture.notes.delete('Test.md'); fixture.openNote('Test.md')");
     assert.equal(await page.evaluate("fixture.zoom()"), remembered);
     await left.waitFor();
-    await left.tap();
+    await page.evaluate("fixture.sync.deviceName = 'iPad'; fixture.openNote('Another.md')");
     await centered.waitFor();
-    assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), "center");
+    await page.evaluate("fixture.openNote('Test.md')");
+    await page.waitForFunction("fixture.noteViews.load('Test.md').layout === 'center'");
+    assert.equal(await page.evaluate("fixture.zoom()"), 1);
+    await page.getByRole("button", { name: "Zoom out", exact: true }).tap();
+    assert.equal(await page.evaluate("fixture.zoom()"), 0.9);
+    await page.evaluate(`(() => {
+      const drawing = fixture.notes.get("Test.md");
+      drawing.applySynced({...drawing.data(), canvasLayout: "left"}, true);
+    })()`);
+    await centered.waitFor();
+    await page.evaluate("fixture.sync.deviceName = 'Desktop'; fixture.openNote('Another.md')");
+    await page.evaluate("fixture.openNote('Test.md')");
+    await left.waitFor();
+    assert.equal(await page.evaluate("fixture.zoom()"), remembered);
 
     await page.locator('.modern-draw-toolbar [data-tool="select"]').tap();
     await page.waitForFunction("fixture.view.contentDOM.isContentEditable");

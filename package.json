@@ -1,6 +1,6 @@
 {
   "name": "obsidian-modern-draw",
-  "version": "0.6.31",
+  "version": "0.6.32",
   "description": "Seamless freehand drawing directly over ordinary Obsidian Markdown notes.",
   "type": "module",
   "main": "main.js",
