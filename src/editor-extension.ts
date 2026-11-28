@@ -1,7 +1,7 @@
 import { Compartment, EditorSelection, EditorState, Prec, StateEffect, Transaction, type Extension, type SelectionRange, type Text } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { invertedEffects, isolateHistory, redo as redoEditor, redoDepth, undo as undoEditor, undoDepth } from "@codemirror/commands";
-import { editorInfoField, MarkdownView, Platform, setIcon, type App, type MarkdownFileInfo } from "obsidian";
+import { editorInfoField, MarkdownView, Menu, Platform, setIcon, type App, type MarkdownFileInfo } from "obsidian";
 import type { ControllerChange, ModernDrawController } from "./controller";
 import {
   distanceToSegment,
@@ -19,7 +19,7 @@ import { planHorizontalSpace, type HorizontalSpaceItem } from "./horizontal-spac
 import type { SnapshotRegion } from "./snapshot-region";
 import type { ScreenSnapshot } from "./snapshot-surface";
 import { InkDoubleTap } from "./ink-double-tap";
-import { appendStylusEnd, blockPointer, guardDrawingTouches, isPalmPointer, pointerSamples, updatePalmRest, type PinchGesture } from "./ink-input";
+import { appendStylusEnd, blockPointer, drawingToolForPointer, guardDrawingTouches, isInkDrawingTool, isPalmPointer, pointerSamples, updatePalmRest, type PinchGesture } from "./ink-input";
 import { importedPageImages } from "./imported-page";
 import { InkControls } from "./ink-controls";
 import { createStrokeOutline, inkDisplayColor, outlineToSvgPath } from "./ink-renderer";
@@ -245,6 +245,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
               this.setActiveTool(tool);
               this.updateControls();
             },
+            recolorSelection: (color) => this.activeTool === "lasso" && this.recolorSelectedStrokes(color),
             togglePinnedStyle: (tool, style) => void dependencies.saveSettings(toggleInkPreset(dependencies.controller.settings, tool, style)),
             updatePinnedStyle: (tool, original, replacement) => void dependencies.saveSettings(
               updateInkPreset(dependencies.controller.settings, tool, original, replacement)
@@ -295,7 +296,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           () => this.requestRender(),
           (position) => this.renderedVerticalSpaceAt(position),
           (right) => this.previewFloatingExtent(right),
-          () => !dependencies.controller.settings.penOnly
+          () => !dependencies.controller.settings.penOnly,
+          () => this.activeTool === "select"
         );
 
         this.selectionToolbar = document.createElement("div");
@@ -313,7 +315,26 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.selectionColorInput.setAttribute("aria-label", "Selected ink color");
         this.selectionColorInput.addEventListener("change", () => this.recolorSelectedStrokes(this.selectionColorInput.value));
         this.selectionMenu.appendChild(this.selectionColorInput);
-        this.createSelectionActionButton("palette", "Change selected ink color", () => this.selectionColorInput.click());
+        const paletteButton = this.createSelectionActionButton("palette", "Change selected ink color", () => {
+          const colors = new Set(dependencies.controller.settings.penPresets.map(({ color }) => color));
+          if (!colors.size) {
+            this.selectionColorInput.click();
+            return;
+          }
+          const menu = new Menu();
+          for (const color of colors) {
+            const title = this.view.dom.ownerDocument.createDocumentFragment();
+            const swatch = title.appendChild(document.createElement("span"));
+            swatch.className = "modern-draw-color-menu-swatch";
+            swatch.style.backgroundColor = color;
+            title.append(color);
+            menu.addItem((item) => item.setTitle(title).onClick(() => this.recolorSelectedStrokes(color)));
+          }
+          menu.addSeparator();
+          menu.addItem((item) => item.setTitle("Custom color").onClick(() => this.selectionColorInput.click()));
+          const bounds = paletteButton.getBoundingClientRect();
+          menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, paletteButton.ownerDocument);
+        });
         view.dom.appendChild(this.selectionToolbar);
 
         this.onHostPointerDownCapture = this.onHostPointerDownCapture.bind(this);
@@ -327,7 +348,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         view.dom.addEventListener("pointerdown", this.onHostPointerDownCapture, true);
         for (const type of NOTE_EDIT_EVENTS) view.dom.addEventListener(type, this.onNoteEditEvent, true);
         this.detachTouchGuard = guardDrawingTouches(view.dom, view.scrollDOM,
-          () => dependencies.controller.settings,
+          () => this.activeTool === "select" ? { ...dependencies.controller.settings, writingHand: "off" }
+            : dependencies.controller.settings,
           () => this.activePointerId !== null,
           (target) => this.isPointerControl(target),
           (gesture) => this.onPinch(gesture),
@@ -459,6 +481,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
 
       private async bindDocument(): Promise<void> {
         this.doubleTap.reset();
+        this.floatingImages.focusImage(null);
         this.trailingInkTapId = null;
         this.cursorInkDrag = undefined;
         const sourcePath = this.getSourcePath();
@@ -574,6 +597,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private updateControls(): void {
         const tool = this.activeTool;
         if (tool !== "select") {
+          this.floatingImages.focusImage(null);
           this.cursorInkDrag = undefined;
           this.trailingInkTapId = null;
         }
@@ -884,7 +908,6 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       }
 
       private onDrawingPointerDown(event: PointerEvent): void {
-        if (event.pointerType === "pen" && dependencies.controller.settings.autoDrawWithPen) return;
         if (
           (this.activeTool === "space" || this.activeTool === "space-horizontal")
           && (event.pointerType === "touch" || event.pointerType === "mouse" && event.button === 1)
@@ -892,7 +915,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           this.beginViewportPan(event);
           return;
         }
-        this.beginPointer(event, this.activeTool);
+        this.beginPointer(event, drawingToolForPointer(this.activeTool, event, dependencies.controller.settings.autoDrawWithPen));
       }
 
       private beginViewportPan(event: PointerEvent): void {
@@ -928,7 +951,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           event.preventDefault();
         }
         const settings = dependencies.controller.settings;
-        if (isPalmPointer(event, this.view.scrollDOM, settings)
+        if ((this.activeTool !== "select" && isPalmPointer(event, this.view.scrollDOM, settings))
           || (event.pointerType === "touch" && this.activePointerId !== null)) {
           blockPointer(event);
           return;
@@ -940,14 +963,17 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         dependencies.controller.setTool(this.activeTool, this.toolSource);
         const selectedTool = this.activeTool;
         const target = event.target as Element | null;
-        if (settings.doubleTapToErase && selectedTool !== "space-horizontal" && this.document
+        if (settings.doubleTapToErase && isInkDrawingTool(selectedTool) && this.document
           && !target?.closest("button, a, .clickable-icon, .embed-action, .image-resize-corner")
           && pointInRectangle({ x: event.clientX, y: event.clientY }, this.view.scrollDOM.getBoundingClientRect())) {
           this.doubleTap.begin(event);
         } else {
           this.doubleTap.reset();
         }
-        if (event.pointerType === "touch" && settings.penOnly) return;
+        if (event.pointerType === "touch" && settings.penOnly) {
+          if (selectedTool === "select") this.floatingImages.focusImage(target);
+          return;
+        }
         if (selectedTool === "lasso" && event.button === 0 && this.document && this.activePointerId === null) {
           const point = this.eventToCanvasPoint(event);
           const bounds = event.shiftKey ? null : this.selectedBounds();
@@ -967,15 +993,6 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           }
           return;
         }
-        if (event.pointerType === "pen" && dependencies.controller.settings.autoDrawWithPen) {
-          const tool: DrawingTool = isPenEraser(event)
-            ? "eraser"
-            : selectedTool === "highlighter" || selectedTool === "eraser" || selectedTool === "space" || selectedTool === "space-horizontal"
-              ? selectedTool
-              : "pen";
-          this.beginPointer(event, tool);
-          return;
-        }
         if (selectedTool !== "select"
           && pointInRectangle({ x: event.clientX, y: event.clientY }, this.view.scrollDOM.getBoundingClientRect())) {
           this.onDrawingPointerDown(event);
@@ -983,6 +1000,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         }
         if (selectedTool === "select" && event.button === 0 && this.document) {
           const eventTarget = event.target as Element | null;
+          const imageFocused = this.floatingImages.focusImage(eventTarget);
           if (eventTarget?.closest("button, a, .clickable-icon, .embed-action, .embed-actions, .image-resize-corner")) {
             return;
           }
@@ -1011,6 +1029,10 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
               // used for a normal single-image drag.
               this.floatingImages.beginDirectDrag(event);
             }
+            return;
+          }
+          if (imageFocused) {
+            if (this.hasSelection()) this.clearSelection();
             return;
           }
           const pointer = this.eventToCanvasPoint(event);
@@ -1682,15 +1704,13 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.requestRender();
       }
 
-      private recolorSelectedStrokes(color: string): void {
-        if (!this.document || this.selectedStrokeIds.size === 0) return;
-        const strokes = cloneStrokes(this.document.strokes);
-        for (const stroke of strokes) {
-          if (this.selectedStrokeIds.has(stroke.id)) stroke.color = color;
+      private recolorSelectedStrokes(color: string): boolean {
+        if (!this.document || !this.selectedStrokeIds.size) return false;
+        if (this.document.recolorStrokes(this.selectedStrokeIds, color)) {
+          this.recordSurfaceAction({ kind: "ink" });
+          this.preferInkUndo = true;
         }
-        this.document.commit(strokes);
-        this.recordSurfaceAction({ kind: "ink" });
-        this.preferInkUndo = true;
+        return true;
       }
 
       private anchorAt(event: PointerEvent): { pos: number; lineText: string; screenTop: number } {
@@ -2620,10 +2640,6 @@ function mergeRectangles(first: Rectangle, second: Rectangle): Rectangle {
     right: Math.max(first.right, second.right),
     bottom: Math.max(first.bottom, second.bottom)
   };
-}
-
-function isPenEraser(event: PointerEvent): boolean {
-  return event.button === 5 || (event.buttons & 32) !== 0;
 }
 
 function stopEvent(event: Event): void {

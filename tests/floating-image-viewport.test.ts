@@ -37,6 +37,7 @@ test("a floating image stays visible after CodeMirror virtualizes its source lin
       builder.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "stub" }));
       builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `
         export class Component {load(){} unload(){}}
+        export const Platform = {isMobile: false};
         export function setIcon(){}
         export function normalizePath(value){return value;}
         export const MarkdownRenderer={async render(app,text,host){const span=host.appendChild(document.createElement('span'));span.className='image-embed';span.setAttribute('src','photo.png');const img=span.appendChild(document.createElement('img'));img.src='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="red"/></svg>';await img.decode();}};

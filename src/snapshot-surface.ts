@@ -3,6 +3,7 @@ import { Notice, type App, type TFile } from "obsidian";
 import { pointInRectangle, rectangleFromPoints, type Rectangle, type ScreenPoint } from "./geometry";
 import type { InkDocument } from "./ink-store";
 import { regionControl, regionLinkIcon, type RegionAppearance } from "./region-controls";
+import { renderSnapshotImage } from "./snapshot-image";
 import { lineFingerprint, REGION_FLASH_MS, resolveSnapshotLine, SNAPSHOT_FOLDER, snapshotSubpath, type SnapshotRegion } from "./snapshot-region";
 
 export interface SnapshotLink {
@@ -215,6 +216,7 @@ export class SnapshotSurface {
   private offsets = new Map<string, ScreenPoint>();
   private frame = 0;
   private armed = false;
+  private capturing = false;
   private hint?: Notice;
   private active?: { start: ScreenPoint; pointer: number; preview: HTMLElement; file: TFile };
   private focused?: { file: TFile; region: SnapshotRegion };
@@ -348,10 +350,7 @@ export class SnapshotSurface {
   }
 
   private setArmed(armed: boolean): void {
-    if (armed && !this.owner.electron?.remote) {
-      new Notice("Capturing a note or Canvas is available in Obsidian desktop.");
-      return;
-    }
+    if (armed && this.capturing) return;
     this.armed = armed;
     this.controls.setArmed(armed);
     this.root.classList.toggle("modern-draw-snapshot-armed", armed);
@@ -400,7 +399,41 @@ export class SnapshotSurface {
       || bounds.right - bounds.left < 5 || bounds.bottom - bounds.top < 5) return;
     this.geometry.resetTargets?.();
     const region = { id: crypto.randomUUID(), ...this.geometry.save(bounds) };
-    void this.capture(drag.file, region, bounds).catch((error) => {
+    this.capturing = true;
+    const link = this.capture(drag.file, region, bounds).finally(() => { this.capturing = false; });
+    const clipboard = this.owner.navigator.clipboard;
+    // WebKit checks for a user gesture before the asynchronous PNG and vault write finish.
+    const copy = typeof clipboard?.write === "function" && typeof ClipboardItem !== "undefined"
+      ? clipboard.write([new ClipboardItem({
+        "text/plain": link.then((text) => {
+          if (!text) throw new Error("Capture canceled.");
+          return new Blob([text], { type: "text/plain" });
+        })
+      })]).then(() => true, () => false)
+      : Promise.resolve(false);
+    void link.then(async (text) => {
+      if (!text) return;
+      if (await copy || await clipboard?.writeText(text).then(() => true, () => false)) {
+        new Notice("Region copied. Paste it into a note or Canvas.");
+        return;
+      }
+      const fragment = this.root.ownerDocument.createDocumentFragment();
+      fragment.append("Region saved. ");
+      const button = fragment.appendChild(this.root.ownerDocument.createElement("button"));
+      button.textContent = "Copy embed link";
+      button.addEventListener("click", async () => {
+        if (await clipboard?.writeText(text).then(() => true, () => false)) {
+          new Notice("Region copied. Paste it into a note or Canvas.");
+          return;
+        }
+        const input = button.ownerDocument.createElement("input");
+        input.readOnly = true;
+        input.value = text;
+        button.replaceWith(input);
+        input.select();
+      });
+      new Notice(fragment, 0);
+    }).catch((error) => {
       console.error("Modern Draw: Could not capture this region.", error);
       new Notice("Could not capture this region.");
     });
@@ -414,23 +447,24 @@ export class SnapshotSurface {
     });
   }
 
-  private async capture(file: TFile, region: SnapshotRegion, bounds: Rectangle): Promise<void> {
+  private async capture(file: TFile, region: SnapshotRegion, bounds: Rectangle): Promise<string | undefined> {
     const contents = this.owner.electron?.remote?.getCurrentWebContents();
-    if (!contents) throw new Error("Desktop capture is unavailable.");
     this.root.classList.add("modern-draw-capture-clean");
     let png: Uint8Array;
     try {
       await new Promise<void>((resolve) => this.owner.requestAnimationFrame(() => this.owner.requestAnimationFrame(() => resolve())));
       if (file !== this.file() || !this.root.isConnected || this.root.getBoundingClientRect().width === 0) return;
-      const zoom = contents.getZoomFactor();
-      const x = Math.round(bounds.left * zoom);
-      const y = Math.round(bounds.top * zoom);
-      const image = await contents.capturePage({
-        x, y,
-        width: Math.round(bounds.right * zoom) - x,
-        height: Math.round(bounds.bottom * zoom) - y
-      });
-      png = image.toPNG();
+      if (contents) {
+        const zoom = contents.getZoomFactor();
+        const x = Math.round(bounds.left * zoom);
+        const y = Math.round(bounds.top * zoom);
+        const image = await contents.capturePage({
+          x, y,
+          width: Math.round(bounds.right * zoom) - x,
+          height: Math.round(bounds.bottom * zoom) - y
+        });
+        png = image.toPNG();
+      } else png = await renderSnapshotImage(this.root, bounds);
     } finally {
       this.root.classList.remove("modern-draw-capture-clean");
     }
@@ -443,9 +477,7 @@ export class SnapshotSurface {
     await this.app.vault.createBinary(`${SNAPSHOT_FOLDER}/${region.id}.png`, Uint8Array.from(png).buffer);
     this.document(file)?.updateRegions([region], false);
     this.refresh();
-    const link = this.app.fileManager.generateMarkdownLink(file, "", snapshotSubpath(region));
-    await this.owner.navigator.clipboard.writeText("!" + link);
-    new Notice("Region copied. Paste it into a note or Canvas.");
+    return "!" + this.app.fileManager.generateMarkdownLink(file, "", snapshotSubpath(region));
   }
 
   private doubleClick = (event: MouseEvent): void => {

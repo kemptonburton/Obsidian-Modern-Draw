@@ -54,7 +54,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       }
       const imageRow = 8;
       const state = EditorState.create({
-        doc: "test line\\n".repeat(400),
+        doc: "test line\\n".repeat(imageRow - 1) + "![[crop.png]]\\n" + "test line\\n".repeat(400 - imageRow),
         extensions: [editorInfoField.init(() => owner), extension, EditorView.decorations.compute(["doc"], ({doc}) =>
           Decoration.set([Decoration.widget({widget: new ImageWidget()}).range(doc.line(imageRow).from)]))]
       });
@@ -187,6 +187,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
           export class Modal {}
           export class FuzzySuggestModal {}
           export class Notice {}
+          export class Menu {}
           export class Setting {}
           export function imageEmbed() {
             const host = document.createElement("span");
@@ -380,6 +381,58 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       return ink.strokes.slice(-2).map(stroke => stroke.pressureSensitive ?? true);
     })()`);
     assert.deepEqual(pressureModes, [false, true]);
+    const penPath = (points: number[][]) => page.evaluate((coordinates) => {
+      const { view, ink } = (window as any).fixture;
+      const rect = view.scrollDOM.getBoundingClientRect();
+      const before = ink.strokes.length;
+      coordinates.forEach(([x, y], index) => {
+        const type = index === 0 ? "pointerdown" : index === coordinates.length - 1 ? "pointerup" : "pointermove";
+        view.scrollDOM.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, isPrimary: true, pointerType: "pen", pointerId: 63,
+          clientX: rect.left + x, clientY: rect.top + y, button: 0, buttons: type === "pointerup" ? 0 : 1
+        }));
+      });
+      return ink.strokes.length - before;
+    }, points);
+    await page.locator('.modern-draw-toolbar [data-tool="select"]').tap();
+    assert.equal(await penPath([[610, 80], [630, 85], [650, 90]]), 0);
+    await page.evaluate(`fixture.controller.updateSettings({...fixture.controller.settings,
+      penPresets: [{color: "#db2777", width: 4}]})`);
+    await page.locator('.modern-draw-toolbar [data-tool="lasso"]').tap();
+    assert.equal(await penPath([[165, 64], [246, 64], [246, 94], [165, 94], [165, 64]]), 0);
+    const preset = page.getByRole("button", { name: "Use pen preset #db2777, 4px" });
+    await preset.tap();
+    assert.equal(await page.evaluate("fixture.controller.activeTool"), "lasso");
+    assert.equal(await page.evaluate("fixture.ink.strokes.at(-2).color"), "#db2777");
+    assert.notEqual(await page.evaluate("fixture.ink.strokes.at(-1).color"), "#db2777");
+    await page.getByRole("button", { name: "Undo ink", exact: true }).tap();
+    assert.notEqual(await page.evaluate("fixture.ink.strokes.at(-2).color"), "#db2777");
+
+    await page.locator('.modern-draw-toolbar [data-tool="select"]').tap();
+    await page.evaluate(`fixture.view.scrollDOM.scrollTop = 0;
+      fixture.ink.commitFloatingImages(fixture.ink.floatingImages.map(image => ({...image, y: 100})))`);
+    const sourceImage = page.locator(".cm-line .image-embed img");
+    const handle = page.locator(".cm-line .modern-draw-image-resize-corner");
+    const resizeImage = async () => {
+      await sourceImage.tap();
+      await handle.waitFor({ state: "visible" });
+      await handle.evaluate((target) => {
+        const bounds = target.getBoundingClientRect();
+        for (const [type, delta] of [["pointerdown", 0], ["pointermove", 35], ["pointerup", 35]] as const) {
+          target.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, cancelable: true, isPrimary: true, pointerId: 64, pointerType: "touch",
+            button: 0, buttons: type === "pointerup" ? 0 : 1,
+            clientX: bounds.left + bounds.width / 2 + delta, clientY: bounds.top + bounds.height / 2
+          }));
+        }
+      });
+    };
+    await resizeImage();
+    assert.equal(await page.evaluate("fixture.ink.floatingImages[0].width"), 130);
+    await page.evaluate("fixture.ink.commitFloatingImages([])");
+    await page.waitForFunction("!document.querySelector('.cm-line .image-embed').classList.contains('modern-draw-floating-image')");
+    await resizeImage();
+    assert.equal(await page.evaluate("fixture.view.state.doc.line(8).text"), "![[crop.png|135]]");
     const centered = page.getByRole("button", { name: "Centered text canvas; switch to left origin" });
     const left = page.getByRole("button", { name: "Left-origin text canvas; switch to centered" });
     await centered.tap();
@@ -407,6 +460,19 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       title.focus({preventScroll: true});
       return document.activeElement === title;
     })()`), true);
+    await page.setViewportSize({ width: 340, height: 220 });
+    await preset.dblclick();
+    const dialog = page.getByRole("dialog", { name: "Edit pen preset" });
+    await dialog.waitFor();
+    const popover = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const swatch = element.querySelector(".modern-draw-palette button")!.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, focused: document.activeElement === element,
+        swatchWidth: swatch.width, swatchHeight: swatch.height };
+    });
+    assert.ok(popover.left >= 0 && popover.top >= 0 && popover.right <= 340 && popover.bottom <= 220, JSON.stringify(popover));
+    assert.equal(popover.focused, true);
+    assert.equal(popover.swatchWidth, popover.swatchHeight);
   } finally {
     await browser.close();
   }

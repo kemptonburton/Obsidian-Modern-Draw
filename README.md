@@ -8,7 +8,7 @@ Write with an Apple Pencil, sketch over a Markdown note, or mark up a PDF slide 
 - **Work with text and ink together.** Select text and ink in the same rows, delete them together, or restore both with Undo. Use the lasso to select and move ink, text, and images, or insert space between sections.
 - **Arrange the page.** Float an image out of the text flow, then move or resize it. Choose a centered or left-aligned layout for each note. Zoom from 10% to 250% with pinch, toolbar buttons, or Ctrl/Cmd+wheel. Each device remembers its zoom per note.
 - **Mark up PDFs and slides.** Import PDF pages into a note or onto Canvas. In notes, page-relative ink follows the image when its display width changes. On desktop, export a note to PDF or a Canvas to an image.
-- **Reuse a region.** On desktop, copy a rectangle from a note, Canvas, or PDF into another note. Double-click the capture to jump back to its source.
+- **Reuse a region.** Copy a rectangle from a note, Canvas, or PDF into another note. Double-click the capture to jump back to its source.
 
 ## Install from source
 
@@ -30,7 +30,7 @@ For a manual install, run `npm run build` and copy `main.js`, `manifest.json`, a
 1. Open **Settings → Modern Draw** and enable **Stylus-only touch drawing**. One finger scrolls and two fingers pinch to zoom while Apple Pencil draws.
 2. Choose your **Writing hand** and adjust **Palm rest height**. The bottom rest blocks finger and palm gestures while accepting Pencil strokes.
 3. Use **Stylus pressure affects width** to choose between pressure-sensitive and consistent lines. If you want to switch between the eraser and your last drawing tool by tapping twice on the page, enable **Double-tap to switch eraser**.
-4. Switch to **Select** when you want the text cursor and keyboard.
+4. Switch to **Select** when you want the text cursor and keyboard. Tap an image to show its resize handle. The selection tools also apply to Apple Pencil. To recolor ink, lasso it and tap one of your saved pen presets.
 
 ## Import existing notes
 
@@ -59,7 +59,7 @@ npm run check
 
 `check` runs TypeScript, the tests, and a production build. Use `npm run dev` to rebuild as you edit, or `npm run deploy -- "/path/to/test-vault"` to build and install a copy for testing in Obsidian.
 
-Ink anchored to a Markdown line moves with edits above it. If the line wraps differently after a font or width change, the strokes retain their shape. Note and Canvas exports and linked region capture use Obsidian's desktop interfaces.
+Ink anchored to a Markdown line moves with edits above it. If the line wraps differently after a font or width change, the strokes retain their shape. Note and Canvas exports use Obsidian's desktop interfaces.
 
 ## License
 

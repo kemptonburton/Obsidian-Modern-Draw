@@ -101,6 +101,12 @@ export class InkDocument {
     return true;
   }
 
+  recolorStrokes(ids: ReadonlySet<string>, color: string): boolean {
+    if (!this.strokes.some((stroke) => ids.has(stroke.id) && stroke.color !== color)) return false;
+    this.commit(this.strokes.map((stroke) => ids.has(stroke.id) ? { ...stroke, color } : stroke));
+    return true;
+  }
+
   applyTextInkEdit(entries: readonly IndexedInkStroke[], restore: boolean, text: string): void {
     const next = [...this.strokes];
     const visibleIds = new Set(next.map(({ id }) => id));

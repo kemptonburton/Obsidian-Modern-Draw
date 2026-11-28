@@ -29,6 +29,12 @@ export function selectImageSyntaxRange(
     Math.abs(range.from - approximateOffset) < Math.abs(closest.from - approximateOffset) ? range : closest
   );
 }
+
+export function resizeImageSyntax(syntax: string, width: number): string {
+  const end = syntax.startsWith("![[") ? syntax.length - 2 : syntax.indexOf("](");
+  if (end < 0) return syntax;
+  return syntax.slice(0, end).replace(/\|\d+(?:x\d+)?$/i, "") + `|${Math.round(width)}` + syntax.slice(end);
+}
 import { resolveAnchor } from "./anchors";
 import type { FloatingImagePlacement } from "./model";
 

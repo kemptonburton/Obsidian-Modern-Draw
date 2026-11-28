@@ -20,8 +20,8 @@ export class ModernDrawSettingTab extends PluginSettingTab {
     });
 
     new Setting(containerEl)
-      .setName("Automatically draw with a stylus")
-      .setDesc("A pen draws even while text/select mode is active. The mouse and touch continue editing and scrolling.")
+      .setName("Use the stylus eraser tip")
+      .setDesc("A stylus eraser tip erases while using a drawing tool. The selected cursor and lasso tools also apply to the stylus.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.autoDrawWithPen).onChange(async (value) => {
           await this.plugin.updateSetting("autoDrawWithPen", value);

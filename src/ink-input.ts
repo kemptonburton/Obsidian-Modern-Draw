@@ -1,4 +1,13 @@
-import type { InkPoint, ModernDrawSettings } from "./model";
+import type { DrawingTool, InkPoint, ModernDrawSettings } from "./model";
+
+export function isInkDrawingTool(tool: DrawingTool): boolean {
+  return tool === "pen" || tool === "highlighter" || tool === "eraser";
+}
+
+export function drawingToolForPointer(tool: DrawingTool, event: PointerEvent, useEraserTip: boolean): DrawingTool {
+  return useEraserTip && isInkDrawingTool(tool) && event.pointerType === "pen"
+    && (event.button === 5 || (event.buttons & 32) !== 0) ? "eraser" : tool;
+}
 
 export interface PinchGesture {
   clientX: number;

@@ -14,6 +14,7 @@ export interface InkControlActions {
   setColor(color: string): void;
   setStrokeSize(size: number): void;
   setStyle(tool: InkTool, style: InkStylePreset): void;
+  recolorSelection?(color: string): boolean;
   togglePinnedStyle(tool: InkTool, style: InkStylePreset): void;
   updatePinnedStyle(tool: InkTool, original: InkStylePreset, replacement: InkStylePreset | null): void;
   movePinnedStyle(source: SavedInkPreset, before: SavedInkPreset | null): void;
@@ -100,6 +101,25 @@ export class InkControls {
   private currentPresets: InkStylePreset[] = [];
   private editingPreset?: PresetEdit;
   private popoverAnchor?: HTMLElement;
+  private readonly positionPopover = (): void => {
+    const anchor = this.popoverAnchor;
+    if (!anchor) return;
+    const view = this.owner.defaultView ?? window;
+    const viewport = view.visualViewport;
+    const left = (viewport?.offsetLeft ?? 0) + 8;
+    const top = (viewport?.offsetTop ?? 0) + 8;
+    const width = Math.max(0, (viewport?.width ?? view.innerWidth) - 16);
+    const height = Math.max(0, (viewport?.height ?? view.innerHeight) - 16);
+    this.popover.style.maxWidth = `${width}px`;
+    this.popover.style.maxHeight = `${height}px`;
+    const { left: anchorLeft, top: anchorTop, bottom: anchorBottom } = anchor.getBoundingClientRect();
+    const { offsetWidth, offsetHeight } = this.popover;
+    const below = anchorBottom + 8;
+    const above = anchorTop - 8 - offsetHeight;
+    const desiredTop = below + offsetHeight <= top + height || above < top ? below : above;
+    this.popover.style.left = `${Math.max(left, Math.min(left + width - offsetWidth, anchorLeft))}px`;
+    this.popover.style.top = `${Math.max(top, Math.min(top + height - offsetHeight, desiredTop))}px`;
+  };
   private readonly closePopover = (event: PointerEvent): void => {
     if (!this.popover.contains(event.target as Node) && !this.root.contains(event.target as Node)) {
       this.hidePopover();
@@ -138,6 +158,7 @@ export class InkControls {
     this.popover.className = "modern-draw-style-popover is-hidden";
     this.popover.setAttribute("aria-label", "Ink style");
     this.popover.setAttribute("role", "dialog");
+    this.popover.tabIndex = -1;
     this.popover.addEventListener("pointerdown", stopEvent);
     this.popover.addEventListener("click", stopEvent);
     this.styleTitle = document.createElement("div");
@@ -313,6 +334,7 @@ export class InkControls {
 
   destroy(): void {
     this.clearPresetPress();
+    this.hidePopover();
     this.owner.removeEventListener("pointerdown", this.closePopover, true);
     this.popover.remove();
     this.root.remove();
@@ -329,6 +351,12 @@ export class InkControls {
   }
 
   private hidePopover(): void {
+    if (this.popoverAnchor) {
+      const view = this.owner.defaultView ?? window;
+      view.removeEventListener("resize", this.positionPopover);
+      view.visualViewport?.removeEventListener("resize", this.positionPopover);
+      view.visualViewport?.removeEventListener("scroll", this.positionPopover);
+    }
     this.editingPreset = undefined;
     this.popoverAnchor = undefined;
     this.popover.classList.add("is-hidden");
@@ -338,16 +366,17 @@ export class InkControls {
     this.popoverAnchor = anchor;
     this.updatePopover();
     this.popover.classList.remove("is-hidden");
-    const anchorRect = anchor.getBoundingClientRect();
-    const ownerWindow = this.owner.defaultView ?? window;
-    this.popover.style.left = `${Math.max(8, Math.min(ownerWindow.innerWidth - this.popover.offsetWidth - 8, anchorRect.left))}px`;
-    this.popover.style.top = `${Math.max(8, Math.min(ownerWindow.innerHeight - this.popover.offsetHeight - 8, anchorRect.bottom + 8))}px`;
+    const view = this.owner.defaultView ?? window;
+    view.addEventListener("resize", this.positionPopover);
+    view.visualViewport?.addEventListener("resize", this.positionPopover);
+    view.visualViewport?.addEventListener("scroll", this.positionPopover);
+    this.positionPopover();
   }
 
   private editPreset(anchor: HTMLButtonElement, tool: InkTool, preset: InkStylePreset): void {
     this.editingPreset = { tool, original: preset, draft: { ...preset } };
     this.showPopover(anchor);
-    this.customColorInput.focus();
+    this.popover.focus({ preventScroll: true });
   }
 
   private setPopoverColor(color: string): void {
@@ -436,7 +465,7 @@ export class InkControls {
       this.lastPresetClick = pointerClick && !doubleTap ? button : undefined;
       this.lastTapTime = touchTap ? event.timeStamp : -Infinity;
       this.hidePopover();
-      this.actions.setStyle(tool, preset);
+      if (tool !== "pen" || !this.actions.recolorSelection?.(preset.color)) this.actions.setStyle(tool, preset);
       if (doubleTap) this.editPreset(button, tool, preset);
     });
     const edit = (event: Event) => {

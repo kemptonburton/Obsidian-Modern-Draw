@@ -1,8 +1,8 @@
 import type { EditorView } from "@codemirror/view";
-import { Component, MarkdownRenderer, setIcon, type App } from "obsidian";
+import { Component, MarkdownRenderer, Platform, setIcon, type App } from "obsidian";
 import type { Rectangle, ScreenPoint } from "./geometry";
 import type { InkDocument } from "./ink-store";
-import { findImageSyntaxRanges, selectImageSyntaxRange } from "./image-syntax";
+import { findImageSyntaxRanges, resizeImageSyntax, selectImageSyntaxRange } from "./image-syntax";
 import { createStrokeId, type FloatingImagePlacement, type StrokeAnchor } from "./model";
 import { noteLineOffset } from "./note-zoom";
 
@@ -29,6 +29,7 @@ export class FloatingImageManager {
   private readonly persistentLayer: HTMLDivElement;
   private readonly persistentEmbeds = new Map<string, { host: HTMLDivElement; component: Component; source: string }>();
   private spaceShift?: { factors: ReadonlyMap<string, number>; delta: ScreenPoint };
+  private focusedImage?: HTMLElement;
   private readonly onScroll = (): void => this.refresh();
 
   constructor(
@@ -39,7 +40,8 @@ export class FloatingImageManager {
     private readonly onLayoutChanged: () => void,
     private readonly getAnchorOffset: (position: number) => number = () => 0,
     private readonly onExtentPreview: (right: number | null) => void = () => undefined,
-    private readonly allowTouchDrag: () => boolean = () => true
+    private readonly allowTouchDrag: () => boolean = () => true,
+    private readonly canEditImages: () => boolean = () => true
   ) {
     this.persistentLayer = view.dom.ownerDocument.createElement("div");
     this.persistentLayer.className = "modern-draw-floating-layer";
@@ -68,6 +70,7 @@ export class FloatingImageManager {
 
   destroy(): void {
     this.destroyed = true;
+    this.focusImage(null);
     this.observer.disconnect();
     this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
     for (const entry of this.persistentEmbeds.values()) entry.component.unload();
@@ -76,6 +79,7 @@ export class FloatingImageManager {
     if (this.refreshFrame !== null) cancelAnimationFrame(this.refreshFrame);
     this.showSelection(new Set());
     this.showSpaceShift(new Map());
+    for (const handle of this.view.contentDOM.querySelectorAll(".modern-draw-image-resize-corner")) handle.remove();
     for (const button of this.view.contentDOM.querySelectorAll<HTMLElement>(".modern-draw-float-image-button")) {
       button.remove();
     }
@@ -94,6 +98,17 @@ export class FloatingImageManager {
   placementIdForTarget(target: EventTarget | null): string | null {
     if (!(target instanceof Element)) return null;
     return target.closest<HTMLElement>(".modern-draw-floating-image")?.dataset.modernDrawPlacementId ?? null;
+  }
+
+  focusImage(target: EventTarget | null): boolean {
+    const candidate = target instanceof Element ? target.closest<HTMLElement>(".image-embed") : null;
+    const image = candidate && this.view.dom.contains(candidate) ? candidate : undefined;
+    if (image !== this.focusedImage) {
+      this.focusedImage?.classList.remove("modern-draw-image-focused");
+      this.focusedImage = image;
+      image?.classList.add("modern-draw-image-focused");
+    }
+    return !!image;
   }
 
   /**
@@ -240,6 +255,12 @@ export class FloatingImageManager {
   private bindEmbed(embed: HTMLElement): void {
     this.boundEmbeds.add(embed);
     this.ensureActionGroup(embed);
+    if (Platform?.isMobile && !embed.querySelector(".image-resize-corner")) {
+      const handle = embed.ownerDocument.createElement("div");
+      handle.className = "image-resize-corner modern-draw-image-resize-corner";
+      handle.setAttribute("aria-label", "Resize image");
+      embed.appendChild(handle);
+    }
     embed.querySelector("img")?.addEventListener("load", () => this.refresh());
     embed.addEventListener("pointerdown", (event) => this.beginDrag(event, embed), true);
     embed.addEventListener("click", (event) => {
@@ -333,7 +354,7 @@ export class FloatingImageManager {
     this.onLayoutChanged();
   }
 
-  private moveImageSyntaxToVisualPosition(embed: HTMLElement, identity: ImageIdentity): void {
+  private syntaxFor(embed: HTMLElement, identity: ImageIdentity) {
     const editorDocument = this.view.state.doc;
     const sourceLine = editorDocument.lineAt(Math.max(0, Math.min(editorDocument.length, identity.anchor.pos)));
     let widgetPosition = sourceLine.from;
@@ -348,7 +369,14 @@ export class FloatingImageManager {
       identity.occurrence,
       Math.max(0, widgetPosition - sourceLine.from)
     );
-    if (!localRange) return;
+    return localRange ? { sourceLine, localRange } : null;
+  }
+
+  private moveImageSyntaxToVisualPosition(embed: HTMLElement, identity: ImageIdentity): void {
+    const syntax = this.syntaxFor(embed, identity);
+    if (!syntax) return;
+    const { sourceLine, localRange } = syntax;
+    const editorDocument = this.view.state.doc;
 
     const embedRect = embed.getBoundingClientRect();
     const documentHeight = Math.max(0, embedRect.top - this.view.documentTop);
@@ -375,11 +403,13 @@ export class FloatingImageManager {
   }
 
   private beginDrag(event: PointerEvent, embed: HTMLElement): void {
-    if (event.button !== 0 || event.pointerType === "mouse" && !event.isPrimary) return;
+    if (!this.canEditImages() || this.view.state.readOnly || event.button !== 0 || !event.isPrimary) return;
     const identity = this.identityFor(embed);
     const placement = identity ? this.findPlacement(identity) : null;
     if ((event.target as Element | null)?.closest(".image-resize-corner")) {
-      if (identity && placement) this.beginResize(event, embed, identity, placement);
+      if (identity && (placement || (event.target as Element).closest(".modern-draw-image-resize-corner"))) {
+        this.beginResize(event, embed, identity, placement);
+      }
       return;
     }
     if (event.pointerType === "touch" && !this.allowTouchDrag()) return;
@@ -453,7 +483,7 @@ export class FloatingImageManager {
     event: PointerEvent,
     embed: HTMLElement,
     identity: ImageIdentity,
-    placement: FloatingImagePlacement
+    placement: FloatingImagePlacement | null
   ): void {
     const image = embed.querySelector<HTMLImageElement>("img");
     if (!image) return;
@@ -471,7 +501,7 @@ export class FloatingImageManager {
     const paintResize = (): void => {
       resizeFrame = null;
       this.applyWidth(embed, nextWidth);
-      this.onExtentPreview(placement.x + nextWidth);
+      if (placement) this.onExtentPreview(placement.x + nextWidth);
     };
 
     const move = (moveEvent: PointerEvent): void => {
@@ -491,13 +521,24 @@ export class FloatingImageManager {
       window.removeEventListener("pointercancel", end, true);
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       this.onExtentPreview(null);
-      this.applyWidth(embed, nextWidth);
       embed.classList.remove("is-resizing");
-      const document = this.getDocument();
-      if (!document) return;
-      document.commitFloatingImages(document.floatingImages.map((item) =>
-        item.id === placement.id ? { ...item, width: Math.round(nextWidth * 10) / 10 } : item
-      ));
+      const changed = endEvent.type === "pointerup" && Math.abs(nextWidth - startWidth) >= 1;
+      this.applyWidth(embed, placement ? (changed ? nextWidth : placement.width) : undefined);
+      if (changed && placement) {
+        const document = this.getDocument();
+        document?.commitFloatingImages(document.floatingImages.map((item) =>
+          item.id === placement.id ? { ...item, width: Math.round(nextWidth * 10) / 10 } : item
+        ));
+      } else if (changed && embed.isConnected) {
+        const syntax = this.syntaxFor(embed, identity);
+        if (syntax) {
+          const { sourceLine, localRange } = syntax;
+          this.view.dispatch({ changes: {
+            from: sourceLine.from + localRange.from, to: sourceLine.from + localRange.to,
+            insert: resizeImageSyntax(localRange.text, nextWidth)
+          } });
+        }
+      }
       this.refresh();
       this.onLayoutChanged();
     };

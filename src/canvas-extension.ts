@@ -1,5 +1,5 @@
 import { InkDoubleTap } from "./ink-double-tap";
-import { appendStylusEnd, blockPointer, guardDrawingTouches, isPalmPointer, pointerSamples, updatePalmRest } from "./ink-input";
+import { appendStylusEnd, blockPointer, drawingToolForPointer, guardDrawingTouches, isInkDrawingTool, isPalmPointer, pointerSamples, updatePalmRest } from "./ink-input";
 import { mergeSnapshotRegions } from "./ink-store";
 import type { CanvasRegionTarget, ScreenSnapshot } from "./snapshot-surface";
 import { InkControls } from "./ink-controls";
@@ -234,6 +234,11 @@ class CanvasInkSurface {
         this.inkStyle.setWidth(tool, style.width);
         this.setTool(tool);
       },
+      recolorSelection: (color) => {
+        if (this.activeTool !== "lasso" || !this.document || !this.selectedStrokeIds.size) return false;
+        if (this.document.recolorStrokes(this.selectedStrokeIds, color)) this.preferInkUndo = true;
+        return true;
+      },
       togglePinnedStyle: (tool, style) => void dependencies.saveSettings(
         toggleInkPreset(dependencies.controller.settings, tool, style)
       ),
@@ -297,7 +302,8 @@ class CanvasInkSurface {
     this.requestRender = this.requestRender.bind(this);
     this.wrapper.addEventListener("pointerdown", this.onPointerDown, true);
     this.detachTouchGuard = guardDrawingTouches(wrapper, wrapper,
-      () => dependencies.controller.settings,
+      () => this.activeTool === "select" ? { ...dependencies.controller.settings, writingHand: "off" }
+        : dependencies.controller.settings,
       () => this.activePointerId !== null && !this.allowNativeGesture,
       (target) => Boolean((target as Element | null)?.closest(POINTER_CONTROLS)));
     this.wrapper.addEventListener("click", this.onBlockedNativeClick, true);
@@ -585,19 +591,16 @@ class CanvasInkSurface {
       return;
     }
     const settings = this.dependencies.controller.settings;
-    if (isPalmPointer(event, this.wrapper, settings)
+    if ((this.activeTool !== "select" && isPalmPointer(event, this.wrapper, settings))
       || (event.pointerType === "touch" && this.activePointerId !== null && !this.allowNativeGesture)) {
       blockPointer(event);
       return;
     }
     if (!this.document || this.activePointerId !== null) return;
-    if (settings.doubleTapToErase) this.doubleTap.begin(event);
+    if (settings.doubleTapToErase && isInkDrawingTool(this.activeTool)) this.doubleTap.begin(event);
     if (settings.penOnly && event.pointerType === "touch") return;
     if (event.button !== 0 && event.pointerType === "mouse") return;
-    let tool = this.activeTool;
-    if (tool !== "lasso" && event.pointerType === "pen" && this.dependencies.controller.settings.autoDrawWithPen) {
-      tool = isPenEraser(event) ? "eraser" : tool === "highlighter" || tool === "eraser" ? tool : "pen";
-    }
+    const tool = drawingToolForPointer(this.activeTool, event, settings.autoDrawWithPen);
     if (tool === "space" || tool === "space-horizontal") return;
     if (tool === "lasso") {
       if (event.button !== 0) return;
@@ -1214,8 +1217,4 @@ function mergeNativeBounds(first: NativeCanvasBBox, second: NativeCanvasBBox): N
     maxX: Math.max(first.maxX, second.maxX),
     maxY: Math.max(first.maxY, second.maxY)
   };
-}
-
-function isPenEraser(event: PointerEvent): boolean {
-  return event.button === 5 || (event.buttons & 32) !== 0;
 }

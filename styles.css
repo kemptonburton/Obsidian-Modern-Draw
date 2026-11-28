@@ -22,6 +22,38 @@
 .cm-scroller:has(> .modern-draw-ink-layer.modern-draw-pen-only) { --modern-draw-image-touch-action: pan-x pan-y; }
 .cm-scroller:has(> .modern-draw-ink-layer.modern-draw-pen-only) .modern-draw-floating-image .image-resize-corner { touch-action: none; }
 
+.modern-draw-image-focused { outline: 2px solid var(--interactive-accent); }
+.image-embed.modern-draw-image-focused:not(.modern-draw-floating-image) { position: relative; }
+
+.is-mobile .image-embed.modern-draw-image-focused > .embed-actions {
+  opacity: 1;
+  visibility: visible;
+}
+
+.image-embed .modern-draw-image-resize-corner {
+  display: none;
+  position: absolute;
+  inset: auto 0 0 auto;
+  inset-inline-end: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  touch-action: none;
+}
+
+.image-embed.modern-draw-image-focused .modern-draw-image-resize-corner { display: block; }
+
+.image-embed.modern-draw-image-focused .modern-draw-image-resize-corner::after {
+  width: 8px;
+  height: 8px;
+  opacity: 1;
+}
+
+.markdown-source-view.mod-cm6 .image-embed.is-resizing.has-custom-size :is(.image-wrapper, img) {
+  width: var(--modern-draw-image-width) !important;
+  height: auto !important;
+}
+
 .cm-scroller:has(> .modern-draw-ink-layer[data-tool="eraser"]) {
   --modern-draw-cursor: cell;
 }
@@ -209,6 +241,7 @@
 
 .modern-draw-toolbar .modern-draw-style-preset {
   position: relative;
+  inline-size: var(--modern-draw-control-width);
   flex-direction: column;
   gap: 2px;
   touch-action: none;
@@ -241,6 +274,8 @@
   --icon-size: 16px;
   --icon-stroke: 1.65px;
   flex: none;
+  inline-size: var(--icon-size);
+  block-size: var(--icon-size);
   fill: color-mix(in srgb, var(--ink-color) 28%, transparent);
 }
 
@@ -260,7 +295,7 @@
 
 .modern-draw-palette {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fill, 28px);
   gap: 4px;
   margin-bottom: 10px;
 }
@@ -268,7 +303,8 @@
 .modern-draw-palette > button {
   padding: 0;
   min-width: 0;
-  height: 27px;
+  inline-size: 28px;
+  block-size: 28px;
   background: var(--ink-color);
   border: 1px solid var(--background-modifier-border-hover);
   border-radius: 50%;
@@ -298,7 +334,9 @@
   position: fixed;
   z-index: var(--layer-popover, 1000);
   width: 220px;
-  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m, 8px);
@@ -328,8 +366,9 @@
 }
 
 .modern-draw-custom-color {
-  width: 34px;
-  height: 28px;
+  flex: 0 0 auto;
+  inline-size: 34px;
+  block-size: 28px;
   padding: 2px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s, 5px);
@@ -338,7 +377,9 @@
 
 .modern-draw-pin-style {
   flex: 1;
-  height: 28px;
+  min-inline-size: 0;
+  min-block-size: 28px;
+  white-space: normal;
   background: var(--interactive-normal);
 }
 
@@ -385,6 +426,15 @@
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+}
+
+.modern-draw-color-menu-swatch {
+  display: inline-block;
+  inline-size: 12px;
+  block-size: 12px;
+  margin-inline-end: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
 }
 
 .modern-draw-canvas-overlay {
@@ -624,6 +674,8 @@ button.modern-draw-region-link-icon:focus-visible {
 }
 
 .modern-draw-capture-clean .modern-draw-snapshot-layer,
+.modern-draw-capture-clean .modern-draw-selection-toolbar,
+.modern-draw-capture-clean .modern-draw-image-resize-corner,
 .modern-draw-capture-clean .canvas-controls,
 .modern-draw-capture-clean .canvas-selection,
 .modern-draw-capture-clean .canvas-card-menu,
@@ -632,6 +684,8 @@ button.modern-draw-region-link-icon:focus-visible {
 .modern-draw-capture-clean .embed-actions {
   visibility: hidden !important;
 }
+
+.modern-draw-capture-clean .modern-draw-image-focused { outline: none; }
 
 .canvas-node-content.modern-draw-region-embed > img.modern-draw-region-image {
   display: block;

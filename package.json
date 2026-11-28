@@ -1,6 +1,6 @@
 {
   "name": "obsidian-modern-draw",
-  "version": "0.6.30",
+  "version": "0.6.31",
   "description": "Seamless freehand drawing directly over ordinary Obsidian Markdown notes.",
   "type": "module",
   "main": "main.js",
@@ -38,6 +38,7 @@
   "dependencies": {
     "@codemirror/commands": "6.8.1",
     "fflate": "^0.8.3",
+    "html2canvas-pro": "1.6.4",
     "lz-string": "^1.5.0",
     "perfect-freehand": "^1.2.3"
   }
