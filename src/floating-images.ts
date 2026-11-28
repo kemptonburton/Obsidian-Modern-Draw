@@ -100,7 +100,11 @@ export class FloatingImageManager {
     return target.closest<HTMLElement>(".modern-draw-floating-image")?.dataset.modernDrawPlacementId ?? null;
   }
 
-  focusImage(target: EventTarget | null): boolean {
+  get hasFocusedImage(): boolean {
+    return this.focusedImage?.isConnected === true;
+  }
+
+  focusImage(target: EventTarget | null): HTMLElement | undefined {
     const candidate = target instanceof Element ? target.closest<HTMLElement>(".image-embed") : null;
     const image = candidate && this.view.dom.contains(candidate) ? candidate : undefined;
     if (image !== this.focusedImage) {
@@ -108,7 +112,7 @@ export class FloatingImageManager {
       this.focusedImage = image;
       image?.classList.add("modern-draw-image-focused");
     }
-    return !!image;
+    return image;
   }
 
   /**

@@ -245,7 +245,7 @@ export class InkControls {
     const view = actions.toggleLayout || hasZoom || actions.fitView || actions.openViewMenu
       ? this.createGroup() : null;
     this.layoutButton = view && actions.toggleLayout
-      ? this.createButton("align-left", "Toggle centered/left canvas origin", actions.toggleLayout, view)
+      ? this.createButton("align-center", "Cycle note layout", actions.toggleLayout, view)
       : null;
     if (view && hasZoom) {
       this.createButton("plus", "Zoom in", () => actions.zoomIn?.(), view);
@@ -306,13 +306,14 @@ export class InkControls {
     this.renderStylePresets(state, { color: state.color, width: state.strokeSize });
 
     if (this.layoutButton) {
-      const isLeft = state.canvasLayout === "left";
+      const [icon, label] = {
+        center: ["align-center", "Centered text canvas; switch to left origin"],
+        left: ["align-left", "Left-origin text canvas; switch to scrollable left"],
+        "left-scroll": ["arrow-left-right", "Scrollable left text canvas; switch to centered"]
+      }[state.canvasLayout];
       this.layoutButton.classList.remove("is-active");
-      setIcon(this.layoutButton, isLeft ? "align-left" : "align-center");
-      this.layoutButton.setAttribute(
-        "aria-label",
-        isLeft ? "Left-origin text canvas; switch to centered" : "Centered text canvas; switch to left origin"
-      );
+      setIcon(this.layoutButton, icon);
+      this.layoutButton.setAttribute("aria-label", label);
     }
     this.updateZoom(state.zoom);
   }

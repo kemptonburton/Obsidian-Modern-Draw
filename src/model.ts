@@ -5,7 +5,7 @@ export type WritingHand = "off" | "left" | "right";
 export type ToolbarAlignment = "writing-hand" | "center" | "left" | "right";
 export type InkLocation = "root" | "same" | "subfolder" | "fixed";
 export type InkTool = "pen" | "highlighter";
-export type CanvasLayout = "center" | "left";
+export type CanvasLayout = "center" | "left" | "left-scroll";
 export type RegionDisplay = "hidden" | "icon" | "border" | "full";
 
 export const NOTE_ZOOM_MIN = 0.1;

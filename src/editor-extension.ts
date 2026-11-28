@@ -116,6 +116,8 @@ interface TextInkEdit {
 const textInkEdit = StateEffect.define<TextInkEdit>();
 const INK_SCROLL_BUFFER = 160;
 const NOTE_EDIT_EVENTS = ["focusin", "click", "beforeinput", "paste", "cut", "drop"] as const;
+const NOTE_POINTER_CONTROLS = "button, a, .clickable-icon, .embed-action, .embed-actions, .image-resize-corner";
+const NEXT_CANVAS_LAYOUT: Record<CanvasLayout, CanvasLayout> = { center: "left", left: "left-scroll", "left-scroll": "center" };
 
 export function createInkEditorExtension(dependencies: InkEditorDependencies): Extension {
     const surfaces = new WeakMap<EditorState, InkEditorSurface>();
@@ -645,13 +647,13 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       }
 
       private updateTypingLock(): void {
-        const drawing = this.activeTool !== "select";
-        if (drawing) this.blurNoteTypingFocus();
-        if (this.typingUpdateQueued || this.typingLocked === drawing) return;
+        if (this.activeTool !== "select") this.blurNoteTypingFocus();
+        const locked = this.activeTool !== "select" || this.floatingImages.hasFocusedImage;
+        if (this.typingUpdateQueued || this.typingLocked === locked) return;
         this.typingUpdateQueued = true;
         queueMicrotask(() => {
           this.typingUpdateQueued = false;
-          const locked = this.activeTool !== "select";
+          const locked = this.activeTool !== "select" || this.floatingImages.hasFocusedImage;
           if (this.destroyed || this.typingLocked === locked) return;
           this.typingLocked = locked;
           this.view.dispatch({
@@ -676,7 +678,18 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
 
       private onNoteEditEvent(event: Event): void {
         const { target } = event;
-        if (this.activeTool === "select" || !(target instanceof HTMLElement)) return;
+        if (!(target instanceof HTMLElement)) return;
+        if (this.activeTool === "select") {
+          if (!this.floatingImages.hasFocusedImage) return;
+          if (event.type === "click") {
+            if (!(event instanceof MouseEvent) || event.ctrlKey || event.metaKey || event.altKey
+              || !target.closest(".modern-draw-image-focused") || target.closest(NOTE_POINTER_CONTROLS)) return;
+            // Obsidian's native image click selects the embed syntax and focuses CodeMirror.
+          } else if (event.type !== "beforeinput" || !this.view.contentDOM.contains(target)) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (event.type === "focusin") {
           if (!this.blocksNoteFocus(target)) return;
           target.blur();
@@ -689,7 +702,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       }
 
       private applyLayout(): void {
-        this.inkLayer.classList.toggle("modern-draw-layout-left", this.canvasLayout() === "left");
+        this.inkLayer.dataset.layout = this.noteLayout;
       }
 
       private applyPinnedHeader(): void {
@@ -730,7 +743,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private toggleLayout(): void {
         if (!this.document || !this.sourcePath) return;
         this.initializeHorizontalOrigins();
-        dependencies.noteViews.saveLayout(this.sourcePath, this.noteLayout === "center" ? "left" : "center");
+        dependencies.noteViews.saveLayout(this.sourcePath, NEXT_CANVAS_LAYOUT[this.noteLayout]);
       }
 
       private initializeHorizontalOrigins(): void {
@@ -900,11 +913,13 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           this.cursorInkDrag = undefined;
           this.requestRender();
         }
-        if (event.key === "Escape" && (this.hasSelection() || this.lassoSelectedText)) {
+        if (event.key === "Escape" && (this.hasSelection() || this.lassoSelectedText || this.floatingImages.hasFocusedImage)) {
           if (this.lassoSelectedText) {
             this.view.dispatch({ selection: { anchor: this.view.state.selection.main.head } });
           }
           this.clearSelection();
+          this.floatingImages.focusImage(null);
+          this.updateTypingLock();
           this.requestRender();
           return;
         }
@@ -979,15 +994,33 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         dependencies.controller.setTool(this.activeTool, this.toolSource);
         const selectedTool = this.activeTool;
         const target = event.target as Element | null;
+        const control = target?.closest(NOTE_POINTER_CONTROLS);
         if (settings.doubleTapToErase && isInkDrawingTool(selectedTool) && this.document
-          && !target?.closest("button, a, .clickable-icon, .embed-action, .image-resize-corner")
+          && !control
           && pointInRectangle({ x: event.clientX, y: event.clientY }, this.view.scrollDOM.getBoundingClientRect())) {
           this.doubleTap.begin(event);
         } else {
           this.doubleTap.reset();
         }
+        const image = selectedTool === "select" && event.button === 0 ? this.floatingImages.focusImage(target) : undefined;
+        const imageId = image ? this.floatingImages.placementIdForTarget(image) : null;
+        if (image) {
+          this.trailingInkTapId = null;
+          const { selection } = this.view.state;
+          if (selection.ranges.length > 1 || !selection.main.empty) {
+            this.view.dispatch({ selection: { anchor: selection.main.head } });
+          }
+          this.blurNoteTypingFocus();
+          if (!control) {
+            // Keep keyboard actions in the note while letting the text editor lose focus.
+            event.preventDefault();
+            if (!image.hasAttribute("tabindex")) image.tabIndex = -1;
+            image.focus({ preventScroll: true });
+          }
+        }
+        if (selectedTool === "select") this.updateTypingLock();
         if (event.pointerType === "touch" && settings.penOnly) {
-          if (selectedTool === "select") this.floatingImages.focusImage(target);
+          if (image && !control) this.selectOnlyImage(imageId);
           return;
         }
         if (selectedTool === "lasso" && event.button === 0 && this.document && this.activePointerId === null) {
@@ -1015,12 +1048,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           return;
         }
         if (selectedTool === "select" && event.button === 0 && this.document) {
-          const eventTarget = event.target as Element | null;
-          const imageFocused = this.floatingImages.focusImage(eventTarget);
-          if (eventTarget?.closest("button, a, .clickable-icon, .embed-action, .embed-actions, .image-resize-corner")) {
-            return;
-          }
-          const imageId = this.floatingImages.placementIdForTarget(event.target);
+          if (control) return;
           if (imageId) {
             const mode = floatingImagePointerMode({
               isSelected: this.selectedFloatingImageIds.has(imageId),
@@ -1031,14 +1059,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
             if (mode === "toggle" || mode === "group") {
               this.beginImageSelection(event, imageId);
             } else {
-              if (!this.selectedFloatingImageIds.has(imageId)
-                || this.selectedFloatingImageIds.size !== 1
-                || this.selectedStrokeIds.size > 0) {
-                this.selectedStrokeIds.clear();
-                this.selectedFloatingImageIds.clear();
-                this.selectedFloatingImageIds.add(imageId);
-                this.floatingImages.showSelection(this.selectedFloatingImageIds);
-              }
+              this.selectOnlyImage(imageId);
               // Start the compositor-only path at the outer capture listener,
               // before Obsidian's native image handlers can run. This also
               // guarantees the expensive group-selection renderer is never
@@ -1047,8 +1068,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
             }
             return;
           }
-          if (imageFocused) {
-            if (this.hasSelection()) this.clearSelection();
+          if (image) {
+            this.selectOnlyImage(null);
             return;
           }
           const pointer = this.eventToCanvasPoint(event);
@@ -1663,6 +1684,19 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         return this.selectedStrokeIds.size > 0 || this.selectedFloatingImageIds.size > 0 || this.selectedRegionIds.size > 0;
       }
 
+      private selectOnlyImage(imageId: string | null): void {
+        if (imageId
+          ? this.selectedFloatingImageIds.size === 1 && this.selectedFloatingImageIds.has(imageId)
+            && !this.selectedStrokeIds.size && !this.selectedRegionIds.size
+          : !this.hasSelection()) return;
+        this.clearSelection();
+        if (imageId) {
+          this.selectedFloatingImageIds.add(imageId);
+          this.floatingImages.showSelection(this.selectedFloatingImageIds);
+        }
+        this.requestRender();
+      }
+
       private clearSelection(): void {
         this.selectedRegionIds.clear();
         this.selectedStrokeIds.clear();
@@ -1755,7 +1789,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private insertWritingLineBelowInk(): boolean {
         const { doc, readOnly } = this.view.state;
         const space = this.inkTail?.doc === doc ? this.inkTail.space : undefined;
-        if (readOnly || !space) return false;
+        if (readOnly || this.floatingImages.hasFocusedImage || !space) return false;
         this.view.dispatch({
           changes: { from: doc.length, insert: "\n".repeat(space.lines) },
           selection: { anchor: doc.length + space.lines },
@@ -2452,7 +2486,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           scroll.style.setProperty("--modern-draw-left-overflow", `${left}px`);
         }
         this.workspaceOrigin = baseOrigin + left;
-        this.workspaceWidth = Math.ceil(Math.max(scroll.clientWidth, horizontal?.originalWidth ?? 0,
+        const minimumWidth = this.noteLayout === "left-scroll" ? scroll.clientWidth * 2 : scroll.clientWidth;
+        this.workspaceWidth = Math.ceil(Math.max(minimumWidth, horizontal?.originalWidth ?? 0,
           this.workspaceOrigin + rightEdge + 160));
         this.extent.style.width = `${this.workspaceWidth}px`;
         if (shift !== 0) {

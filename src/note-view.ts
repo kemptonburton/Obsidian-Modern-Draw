@@ -99,7 +99,7 @@ export class NoteViewStore {
     const { zoom, layout } = saved as NoteView;
     const view = {
       zoom: typeof zoom === "number" ? clampNoteZoom(zoom) : undefined,
-      layout: layout === "left" || layout === "center" ? layout : undefined
+      layout: layout === "left" || layout === "center" || layout === "left-scroll" ? layout : undefined
     };
     this.views.set(key, view);
     return view;

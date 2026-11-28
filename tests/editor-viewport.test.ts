@@ -55,7 +55,11 @@ test("note ink moves with the scroller and stays registered through mobile pinch
         })}, importPdf() {}, async saveSettings() {}
       });
       class ImageWidget extends WidgetType {
-        toDOM() { return imageEmbed(); }
+        toDOM(view) {
+          const embed = imageEmbed();
+          embed.querySelector("img").addEventListener("click", () => view.focus());
+          return embed;
+        }
       }
       const imageRow = 8;
       const state = EditorState.create({
@@ -418,9 +422,24 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       fixture.ink.commitFloatingImages(fixture.ink.floatingImages.map(image => ({...image, y: 100})))`);
     const sourceImage = page.locator(".cm-line .image-embed img");
     const handle = page.locator(".cm-line .modern-draw-image-resize-corner");
-    const resizeImage = async () => {
-      await sourceImage.tap();
+    const resizeImage = async (input: "tap" | "click") => {
+      await page.locator(".cm-line").first().click();
+      await page.waitForFunction("fixture.view.contentDOM.isContentEditable && fixture.view.hasFocus");
+      await page.evaluate(`(() => {
+        const { view } = fixture;
+        const line = view.state.doc.line(1);
+        view.dispatch({ selection: { anchor: ${input === "tap" ? "line.to" : "line.from"}, head: line.to } });
+        view.focus();
+      })()`);
+      assert.equal(await page.evaluate("fixture.view.hasFocus"), true);
+      const beforeImage = await page.evaluate("fixture.view.state.doc.toString()");
+      await sourceImage[input]();
       await handle.waitFor({ state: "visible" });
+      await page.waitForFunction(`!fixture.view.hasFocus && !fixture.view.contentDOM.isContentEditable && fixture.view.state.selection.main.empty
+        && document.activeElement.classList.contains("modern-draw-image-focused")`);
+      await page.keyboard.type("x");
+      assert.ok(await page.evaluate((before) => (window as any).fixture.view.state.doc.toString() === before, beforeImage),
+        "typing with an image selected must leave the note text intact");
       await handle.evaluate((target) => {
         const bounds = target.getBoundingClientRect();
         for (const [type, delta] of [["pointerdown", 0], ["pointermove", 35], ["pointerup", 35]] as const) {
@@ -432,18 +451,42 @@ test("note ink moves with the scroller and stays registered through mobile pinch
         }
       });
     };
-    await resizeImage();
+    await resizeImage("tap");
     assert.equal(await page.evaluate("fixture.ink.floatingImages[0].width"), 130);
     await page.evaluate("fixture.ink.commitFloatingImages([])");
     await page.waitForFunction("!document.querySelector('.cm-line .image-embed').classList.contains('modern-draw-floating-image')");
-    await resizeImage();
+    await resizeImage("click");
     assert.equal(await page.evaluate("fixture.view.state.doc.line(8).text"), "![[crop.png|135]]");
+    await page.locator(".cm-line").first().click();
+    await page.waitForFunction("fixture.view.contentDOM.isContentEditable && fixture.view.hasFocus && !document.querySelector('.modern-draw-image-focused')");
     const centered = page.getByRole("button", { name: "Centered text canvas; switch to left origin" });
-    const left = page.getByRole("button", { name: "Left-origin text canvas; switch to centered" });
+    const left = page.getByRole("button", { name: "Left-origin text canvas; switch to scrollable left" });
+    const scrollableLeft = page.getByRole("button", { name: "Scrollable left text canvas; switch to centered" });
     await centered.tap();
     await left.waitFor();
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left");
     assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), undefined);
+    const leftOrigin = await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left");
+    await left.tap();
+    await scrollableLeft.waitFor();
+    const pan = await page.evaluate(() => {
+      const { view } = (window as any).fixture;
+      const { scrollDOM, contentDOM } = view;
+      const guide = getComputedStyle(contentDOM, "::before");
+      const pageLeft = contentDOM.getBoundingClientRect().left;
+      scrollDOM.scrollLeft = 110;
+      const result = { pageLeft, shift: contentDOM.getBoundingClientRect().left - pageLeft,
+        opacity: Number(guide.opacity), guideWidth: guide.width,
+        available: scrollDOM.scrollWidth - scrollDOM.clientWidth, viewportWidth: scrollDOM.clientWidth };
+      scrollDOM.scrollLeft = 0;
+      return result;
+    });
+    assert.equal(pan.pageLeft, leftOrigin);
+    assert.ok(pan.available >= pan.viewportWidth - 1);
+    assert.equal(pan.shift, -110);
+    assert.equal(pan.guideWidth, "1px");
+    assert.equal(pan.opacity, 0.15);
+    assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left-scroll");
 
     await page.locator('.modern-draw-toolbar [aria-label="Zoom in"]').tap();
     await page.waitForFunction("fixture.zoom() > 1");
@@ -454,7 +497,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.equal(await page.evaluate("fixture.savedLayout('Another.md')"), undefined);
     await page.evaluate("fixture.notes.delete('Test.md'); fixture.openNote('Test.md')");
     assert.equal(await page.evaluate("fixture.zoom()"), remembered);
-    await left.waitFor();
+    await scrollableLeft.waitFor();
     await page.evaluate("fixture.sync.deviceName = 'iPad'; fixture.openNote('Another.md')");
     await centered.waitFor();
     await page.evaluate("fixture.openNote('Test.md')");
@@ -469,7 +512,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     await centered.waitFor();
     await page.evaluate("fixture.sync.deviceName = 'Desktop'; fixture.openNote('Another.md')");
     await page.evaluate("fixture.openNote('Test.md')");
-    await left.waitFor();
+    await scrollableLeft.waitFor();
     assert.equal(await page.evaluate("fixture.zoom()"), remembered);
 
     await page.locator('.modern-draw-toolbar [data-tool="select"]').tap();
