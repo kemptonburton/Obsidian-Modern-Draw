@@ -472,24 +472,37 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     }); fixture.view.scrollDOM.scrollLeft = 0;`);
     await page.waitForFunction("fixture.view.scrollDOM.classList.contains('modern-draw-left-overflow')");
     const leftOrigin = await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left");
-    const leftGuide = await page.evaluate("getComputedStyle(fixture.view.contentDOM, '::before').left");
+    const marginGuide = page.locator(".modern-draw-margin-guide");
+    await marginGuide.waitFor();
+    const leftGuide = await marginGuide.evaluate((guide) => {
+      const viewport = guide.closest(".cm-scroller")!.getBoundingClientRect();
+      return guide.getBoundingClientRect().left - viewport.left;
+    });
+    assert.ok(leftGuide >= 1);
     await left.tap();
     await scrollableLeft.waitFor();
+    await page.waitForFunction(`(() => {
+      const guide = document.querySelector(".modern-draw-margin-guide");
+      return guide.getBoundingClientRect().right <= fixture.view.scrollDOM.getBoundingClientRect().left;
+    })()`);
     const pan = await page.evaluate(() => {
       const { view } = (window as any).fixture;
       const { scrollDOM, contentDOM } = view;
-      const guide = getComputedStyle(contentDOM, "::before");
+      const guide = view.dom.querySelector(".modern-draw-margin-guide") as HTMLElement;
+      const viewportLeft = scrollDOM.getBoundingClientRect().left;
+      const guideAtStart = guide.getBoundingClientRect();
       const pageLeft = contentDOM.getBoundingClientRect().left;
       const home = scrollDOM.scrollLeft;
       const leftAvailable = home;
       const rightAvailable = scrollDOM.scrollWidth - scrollDOM.clientWidth - home;
       scrollDOM.scrollLeft = home - 110;
       const shiftWhenPanningLeft = contentDOM.getBoundingClientRect().left - pageLeft;
+      const guideWhenPanningLeft = guide.getBoundingClientRect().left;
       scrollDOM.scrollLeft = home + 110;
       const shiftWhenPanningRight = contentDOM.getBoundingClientRect().left - pageLeft;
       const result = { pageLeft, shiftWhenPanningLeft, shiftWhenPanningRight, leftAvailable, rightAvailable,
-        opacity: Number(guide.opacity), guideWidth: guide.width, guideLeft: pageLeft + parseFloat(guide.left),
-        guideInset: -parseFloat(guide.left), viewportLeft: scrollDOM.getBoundingClientRect().left,
+        opacity: Number(getComputedStyle(guide).opacity), guideWidth: guideAtStart.width, guideWhenPanningLeft,
+        guideRightAtStart: guideAtStart.right, guideRightWhenPanningRight: guide.getBoundingClientRect().right, viewportLeft,
         viewportWidth: scrollDOM.clientWidth };
       scrollDOM.scrollLeft = home;
       return result;
@@ -499,11 +512,12 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.ok(pan.rightAvailable >= pan.viewportWidth - 1);
     assert.equal(pan.shiftWhenPanningLeft, 110);
     assert.equal(pan.shiftWhenPanningRight, -110);
-    assert.equal(pan.guideWidth, "1px");
+    assert.equal(pan.guideWidth, 1);
     assert.equal(pan.opacity, 0.15);
-    assert.equal(pan.guideInset, 36);
-    assert.ok(pan.guideLeft >= pan.viewportLeft);
-    assert.equal(pan.guideInset, -parseFloat(leftGuide as string));
+    assert.ok(pan.guideRightAtStart <= pan.viewportLeft);
+    assert.ok(pan.viewportLeft - pan.guideRightAtStart <= 2);
+    assert.ok(pan.guideWhenPanningLeft > pan.viewportLeft);
+    assert.ok(pan.guideRightWhenPanningRight <= pan.viewportLeft);
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left-scroll");
     await page.evaluate("fixture.noteViews.saveLayout('Test.md', 'left')");
     await left.waitFor();

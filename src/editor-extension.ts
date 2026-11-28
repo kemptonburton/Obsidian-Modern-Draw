@@ -141,6 +141,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private readonly selectionMenu: HTMLDivElement;
       private readonly selectionColorInput: HTMLInputElement;
       private readonly extent: HTMLDivElement;
+      private readonly marginGuide: HTMLDivElement;
       private readonly resizeObserver: ResizeObserver;
       private readonly themeObserver: MutationObserver;
       private readonly unsubscribeController: () => void;
@@ -229,6 +230,10 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.inkLayer = document.createElement("div");
         this.inkLayer.className = "modern-draw-ink-layer";
         this.inkLayer.setAttribute("aria-hidden", "true");
+        this.marginGuide = document.createElement("div");
+        this.marginGuide.className = "modern-draw-margin-guide";
+        this.marginGuide.hidden = true;
+        this.inkLayer.appendChild(this.marginGuide);
         this.canvas = document.createElement("canvas");
         this.canvas.className = "modern-draw-overlay";
         this.canvas.setAttribute("aria-hidden", "true");
@@ -484,7 +489,6 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.extent.remove();
         this.view.scrollDOM.classList.remove("modern-draw-left-overflow", "modern-draw-zoomed");
         this.view.scrollDOM.style.removeProperty("--modern-draw-left-overflow");
-        this.view.scrollDOM.style.removeProperty("--modern-draw-guide-inset");
         this.inkLayer.remove();
         this.palmRest.remove();
         this.controls.destroy();
@@ -2118,6 +2122,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.palmRest.style.height = `${height * dependencies.controller.settings.palmRestHeight / 100}px`;
         this.measureImportedPages();
         const buffer = this.prepareInkBuffer(scrollRect);
+        this.positionMarginGuide(scrollRect);
         const strokes = (this.doubleTap.tracking ? null : this.eraserWorkingSet)
           ?? this.selectionWorkingSet
           ?? this.spaceOriginalStrokes
@@ -2153,6 +2158,21 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.drawSelection();
         this.drawSpaceIndicator(scrollRect);
         this.updateSelectionToolbar(hostRect, scrollRect);
+      }
+
+      private positionMarginGuide(viewport: DOMRect): void {
+        this.marginGuide.hidden = this.noteLayout === "center";
+        if (this.marginGuide.hidden) return;
+        const zoom = this.noteZoom;
+        const page = this.view.contentDOM.getBoundingClientRect();
+        const gutter = Math.min(8 / zoom, Math.max(1 / zoom, this.workspaceOrigin - 2 / zoom));
+        const left = this.noteLayout === "left-scroll"
+          ? Math.max(0, this.workspaceSideRoom - 2 / zoom)
+          : Math.max(gutter, this.workspaceOrigin - 36);
+        // Paint in the scroller's coordinates so the line moves with native panning.
+        this.marginGuide.style.left = `${left}px`;
+        this.marginGuide.style.top = `${this.view.scrollDOM.scrollTop + (page.top - viewport.top) / zoom}px`;
+        this.marginGuide.style.height = `${page.height / zoom}px`;
       }
 
       textSelectionEdit(transaction: Transaction): TextInkEdit | undefined {
@@ -2486,10 +2506,6 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         const left = horizontal ? this.workspaceLeft : naturalLeft + sideRoom;
         const shift = left - this.workspaceLeft;
         const scrollLeft = scroll.scrollLeft;
-        if (this.noteLayout !== "center") {
-          const guideInset = Math.max(0, Math.min(36, baseOrigin + naturalLeft - 1));
-          scroll.style.setProperty("--modern-draw-guide-inset", `${guideInset}px`);
-        }
         if (shift !== 0) {
           this.workspaceLeft = left;
           scroll.classList.toggle("modern-draw-left-overflow", left > 0);
