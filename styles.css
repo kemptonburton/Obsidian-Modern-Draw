@@ -128,11 +128,11 @@
   position: relative;
 }
 
-.cm-scroller:has(> .modern-draw-ink-layer:is([data-layout="left"], [data-layout="left-scroll"])) .cm-sizer {
+.cm-scroller:has(> .modern-draw-ink-layer[data-layout="left"]) .cm-sizer {
   margin-inline: 0 !important;
 }
 
-.cm-scroller:has(> .modern-draw-ink-layer:is([data-layout="left"], [data-layout="left-scroll"])) .cm-contentContainer {
+.cm-scroller:has(> .modern-draw-ink-layer[data-layout="left"]) .cm-contentContainer {
   max-width: var(--file-line-width);
 }
 

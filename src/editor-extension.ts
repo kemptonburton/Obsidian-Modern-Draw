@@ -117,7 +117,6 @@ const textInkEdit = StateEffect.define<TextInkEdit>();
 const INK_SCROLL_BUFFER = 160;
 const NOTE_EDIT_EVENTS = ["focusin", "click", "beforeinput", "paste", "cut", "drop"] as const;
 const NOTE_POINTER_CONTROLS = "button, a, .clickable-icon, .embed-action, .embed-actions, .image-resize-corner";
-const NEXT_CANVAS_LAYOUT: Record<CanvasLayout, CanvasLayout> = { center: "left", left: "left-scroll", "left-scroll": "center" };
 
 export function createInkEditorExtension(dependencies: InkEditorDependencies): Extension {
     const surfaces = new WeakMap<EditorState, InkEditorSurface>();
@@ -391,7 +390,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         });
         this.unsubscribeNoteLayout = dependencies.noteViews.onLayoutChange((path, layout) => {
           if (path !== this.sourcePath) return;
-          this.alignScrollablePage = layout === "left-scroll" && this.noteLayout === "center";
+          this.alignScrollablePage = layout === "left" && this.noteLayout !== layout;
           this.noteLayout = layout;
           this.updateControls();
           this.floatingImages.refresh();
@@ -511,7 +510,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         this.sourcePath = sourcePath;
         const preferences = sourcePath ? dependencies.noteViews.load(sourcePath) : {};
         this.noteLayout = preferences.layout ?? "center";
-        this.alignScrollablePage = this.noteLayout === "left-scroll";
+        this.alignScrollablePage = this.noteLayout === "left";
         this.applyZoom(preferences.zoom ?? 1);
         this.unsubscribeDocument?.();
         this.unsubscribeDocument = null;
@@ -525,6 +524,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         const document = await dependencies.store.getDocument(sourcePath);
         if (this.destroyed || this.sourcePath !== sourcePath) return;
         this.noteLayout = dependencies.noteViews.initializeLayout(sourcePath, document.canvasLayout ?? "center");
+        this.alignScrollablePage = this.noteLayout === "left";
         this.document = document;
         this.clearSelection();
         this.unsubscribeDocument = document.subscribe((persist) => {
@@ -752,7 +752,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
       private toggleLayout(): void {
         if (!this.document || !this.sourcePath) return;
         this.initializeHorizontalOrigins();
-        dependencies.noteViews.saveLayout(this.sourcePath, NEXT_CANVAS_LAYOUT[this.noteLayout]);
+        dependencies.noteViews.saveLayout(this.sourcePath, this.noteLayout === "center" ? "left" : "center");
       }
 
       private initializeHorizontalOrigins(): void {
@@ -2165,12 +2165,8 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
         if (this.marginGuide.hidden) return;
         const zoom = this.noteZoom;
         const page = this.view.contentDOM.getBoundingClientRect();
-        const gutter = Math.min(8 / zoom, Math.max(1 / zoom, this.workspaceOrigin - 2 / zoom));
-        const left = this.noteLayout === "left-scroll"
-          ? Math.max(0, this.workspaceSideRoom - 2 / zoom)
-          : Math.max(gutter, this.workspaceOrigin - 36);
         // Paint in the scroller's coordinates so the line moves with native panning.
-        this.marginGuide.style.left = `${left}px`;
+        this.marginGuide.style.left = `${Math.max(0, this.workspaceSideRoom - 2 / zoom)}px`;
         this.marginGuide.style.top = `${this.view.scrollDOM.scrollTop + (page.top - viewport.top) / zoom}px`;
         this.marginGuide.style.height = `${page.height / zoom}px`;
       }
@@ -2501,7 +2497,7 @@ export function createInkEditorExtension(dependencies: InkEditorDependencies): E
           }
         }
         const scroll = this.view.scrollDOM;
-        const sideRoom = this.noteLayout === "left-scroll" ? scroll.clientWidth : 0;
+        const sideRoom = this.noteLayout === "left" ? scroll.clientWidth : 0;
         const naturalLeft = Math.ceil(Math.max(0, 8 - baseOrigin - leftEdge));
         const left = horizontal ? this.workspaceLeft : naturalLeft + sideRoom;
         const shift = left - this.workspaceLeft;

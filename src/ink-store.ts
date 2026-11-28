@@ -7,6 +7,7 @@ import {
   cloneStrokes,
   cloneVerticalSpaces,
   createStrokeId,
+  normalizeCanvasLayout,
   type CanvasLayout,
   type FloatingImagePlacement,
   type InkFileData,
@@ -39,7 +40,7 @@ export class InkDocument {
   sourcePath: string;
   snapshotRegions: SnapshotRegion[] = [];
   private knownDocumentText: string | null = null;
-  private noteLayout?: CanvasLayout;
+  private noteLayout?: InkFileData["canvasLayout"];
 
   private readonly subscribers = new Set<Subscriber>();
   private readonly textDeletedStrokeIds = new Set<string>();
@@ -62,7 +63,7 @@ export class InkDocument {
 
   /** Import default or legacy layout, used only to initialize a device's view of this note. */
   get canvasLayout(): CanvasLayout | undefined {
-    return this.noteLayout;
+    return normalizeCanvasLayout(this.noteLayout);
   }
 
   setCanvasLayout(layout: CanvasLayout): void {

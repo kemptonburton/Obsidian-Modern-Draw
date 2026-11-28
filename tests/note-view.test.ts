@@ -29,15 +29,23 @@ test("a device migrates its old zoom and seeds its initial layout only once", ()
 test("preferences saved before Sync supplies a name migrate locally and follow a note rename", () => {
   const { app, storage, sync } = localProfile();
   const store = new NoteViewStore(app);
-  store.saveLayout("Lecture.md", "left-scroll");
+  store.saveLayout("Lecture.md", "left");
   store.saveZoom("Lecture.md", 1.3);
   sync.deviceName = "iPad";
   store.move("Lecture.md", "Notes/Lecture.md");
 
   const reopened = new NoteViewStore(app);
-  assert.deepEqual(reopened.load("Notes/Lecture.md"), { zoom: 1.3, layout: "left-scroll" });
+  assert.deepEqual(reopened.load("Notes/Lecture.md"), { zoom: 1.3, layout: "left" });
   assert.deepEqual(reopened.load("Lecture.md"), {});
   assert.deepEqual([...storage.keys()], ['modern-draw-note-view:["iPad","Notes/Lecture.md"]']);
   sync.deviceName = "Desktop";
   assert.deepEqual(reopened.load("Notes/Lecture.md"), {});
+});
+
+test("a saved Scrollable Left preference opens as Left with the same zoom", () => {
+  const { app, storage } = localProfile("iPad");
+  storage.set('modern-draw-note-view:["iPad","Lecture.md"]', { zoom: 0.8, layout: "left-scroll" });
+  const store = new NoteViewStore(app);
+  assert.equal(store.initializeLayout("Lecture.md", "center"), "left");
+  assert.deepEqual(store.load("Lecture.md"), { zoom: 0.8, layout: "left" });
 });

@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import { clampNoteZoom, type CanvasLayout } from "./model";
+import { clampNoteZoom, normalizeCanvasLayout, type CanvasLayout } from "./model";
 
 interface SyncDevice {
   deviceName?: string;
@@ -96,10 +96,10 @@ export class NoteViewStore {
     if (current) return current;
     const saved = this.read(key);
     if (!saved || typeof saved !== "object") return;
-    const { zoom, layout } = saved as NoteView;
+    const { zoom, layout } = saved as { zoom?: unknown; layout?: unknown };
     const view = {
       zoom: typeof zoom === "number" ? clampNoteZoom(zoom) : undefined,
-      layout: layout === "left" || layout === "center" || layout === "left-scroll" ? layout : undefined
+      layout: normalizeCanvasLayout(layout)
     };
     this.views.set(key, view);
     return view;

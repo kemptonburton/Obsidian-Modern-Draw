@@ -307,9 +307,8 @@ export class InkControls {
 
     if (this.layoutButton) {
       const [icon, label] = {
-        center: ["align-center", "Centered text canvas; switch to left origin"],
-        left: ["align-left", "Left-origin text canvas; switch to scrollable left"],
-        "left-scroll": ["arrow-left-right", "Scrollable left text canvas; switch to centered"]
+        center: ["align-center", "Centered text canvas; switch to left"],
+        left: ["align-left", "Left text canvas; switch to centered"]
       }[state.canvasLayout];
       this.layoutButton.classList.remove("is-active");
       setIcon(this.layoutButton, icon);

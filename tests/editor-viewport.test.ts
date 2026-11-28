@@ -29,6 +29,8 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       const owner = Object.assign(new MarkdownView(), {file: {path: "Test.md", extension: "md"}});
       const notes = new Map();
       const saves = new Map();
+      saves.set("Legacy Left.md", encodeInk({ version: 1, sourcePath: "Legacy Left.md",
+        updatedAt: "", strokes: [], canvasLayout: "left-scroll" }));
       const getInk = (path) => {
         if (notes.has(path)) return notes.get(path);
         const drawing = new InkDocument(path, []);
@@ -459,28 +461,20 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.equal(await page.evaluate("fixture.view.state.doc.line(8).text"), "![[crop.png|135]]");
     await page.locator(".cm-line").first().click();
     await page.waitForFunction("fixture.view.contentDOM.isContentEditable && fixture.view.hasFocus && !document.querySelector('.modern-draw-image-focused')");
-    const centered = page.getByRole("button", { name: "Centered text canvas; switch to left origin" });
-    const left = page.getByRole("button", { name: "Left-origin text canvas; switch to scrollable left" });
-    const scrollableLeft = page.getByRole("button", { name: "Scrollable left text canvas; switch to centered" });
+    const centered = page.getByRole("button", { name: "Centered text canvas; switch to left" });
+    const left = page.getByRole("button", { name: "Left text canvas; switch to centered" });
+    const marginGuide = page.locator(".modern-draw-margin-guide");
+    await marginGuide.waitFor({ state: "hidden" });
+    await page.evaluate(`fixture.ink.append({
+      id: "left-margin", tool: "pen", color: "#123456", width: 2, opacity: 1, horizontalOrigin: 0,
+      anchor: {pos: 0, lineText: fixture.view.state.doc.line(1).text}, points: [{x: -56, y: 8, pressure: 0.5}]
+    });`);
     await centered.tap();
     await left.waitFor();
     assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left");
     assert.equal(await page.evaluate("fixture.savedLayout('Test.md')"), undefined);
-    await page.evaluate(`fixture.ink.append({
-      id: "left-margin", tool: "pen", color: "#123456", width: 2, opacity: 1, horizontalOrigin: 0,
-      anchor: {pos: 0, lineText: fixture.view.state.doc.line(1).text}, points: [{x: -56, y: 8, pressure: 0.5}]
-    }); fixture.view.scrollDOM.scrollLeft = 0;`);
     await page.waitForFunction("fixture.view.scrollDOM.classList.contains('modern-draw-left-overflow')");
-    const leftOrigin = await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left");
-    const marginGuide = page.locator(".modern-draw-margin-guide");
     await marginGuide.waitFor();
-    const leftGuide = await marginGuide.evaluate((guide) => {
-      const viewport = guide.closest(".cm-scroller")!.getBoundingClientRect();
-      return guide.getBoundingClientRect().left - viewport.left;
-    });
-    assert.ok(leftGuide >= 1);
-    await left.tap();
-    await scrollableLeft.waitFor();
     await page.waitForFunction(`(() => {
       const guide = document.querySelector(".modern-draw-margin-guide");
       return guide.getBoundingClientRect().right <= fixture.view.scrollDOM.getBoundingClientRect().left;
@@ -507,7 +501,6 @@ test("note ink moves with the scroller and stays registered through mobile pinch
       scrollDOM.scrollLeft = home;
       return result;
     });
-    assert.equal(pan.pageLeft, leftOrigin);
     assert.ok(pan.leftAvailable >= pan.viewportWidth - 1);
     assert.ok(pan.rightAvailable >= pan.viewportWidth - 1);
     assert.equal(pan.shiftWhenPanningLeft, 110);
@@ -518,12 +511,12 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.ok(pan.viewportLeft - pan.guideRightAtStart <= 2);
     assert.ok(pan.guideWhenPanningLeft > pan.viewportLeft);
     assert.ok(pan.guideRightWhenPanningRight <= pan.viewportLeft);
-    assert.equal(await page.evaluate("fixture.noteViews.load('Test.md').layout"), "left-scroll");
-    await page.evaluate("fixture.noteViews.saveLayout('Test.md', 'left')");
-    await left.waitFor();
-    assert.equal(await page.evaluate("fixture.view.contentDOM.getBoundingClientRect().left"), leftOrigin);
     await left.tap();
-    await scrollableLeft.waitFor();
+    await centered.waitFor();
+    await marginGuide.waitFor({ state: "hidden" });
+    await centered.tap();
+    await left.waitFor();
+    await page.waitForFunction((pageLeft) => (window as any).fixture.view.contentDOM.getBoundingClientRect().left === pageLeft, pan.pageLeft);
 
     await page.locator('.modern-draw-toolbar [aria-label="Zoom in"]').tap();
     await page.waitForFunction("fixture.zoom() > 1");
@@ -534,7 +527,7 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     assert.equal(await page.evaluate("fixture.savedLayout('Another.md')"), undefined);
     await page.evaluate("fixture.notes.delete('Test.md'); fixture.openNote('Test.md')");
     assert.equal(await page.evaluate("fixture.zoom()"), remembered);
-    await scrollableLeft.waitFor();
+    await left.waitFor();
     await page.evaluate("fixture.sync.deviceName = 'iPad'; fixture.openNote('Another.md')");
     await centered.waitFor();
     await page.evaluate("fixture.openNote('Test.md')");
@@ -549,8 +542,15 @@ test("note ink moves with the scroller and stays registered through mobile pinch
     await centered.waitFor();
     await page.evaluate("fixture.sync.deviceName = 'Desktop'; fixture.openNote('Another.md')");
     await page.evaluate("fixture.openNote('Test.md')");
-    await scrollableLeft.waitFor();
+    await left.waitFor();
     assert.equal(await page.evaluate("fixture.zoom()"), remembered);
+
+    await page.evaluate("fixture.openNote('Legacy Left.md')");
+    await page.waitForFunction(`fixture.noteViews.load('Legacy Left.md').layout === 'left'
+      && Math.abs(fixture.view.scrollDOM.scrollLeft - fixture.view.scrollDOM.clientWidth) <= 1`);
+    await left.waitFor();
+    await page.evaluate("fixture.openNote('Test.md')");
+    await page.waitForFunction((expected) => (window as any).fixture.zoom() === expected, remembered);
 
     await page.locator('.modern-draw-toolbar [data-tool="select"]').tap();
     await page.waitForFunction("fixture.view.contentDOM.isContentEditable");

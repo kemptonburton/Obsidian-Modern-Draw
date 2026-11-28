@@ -5,12 +5,18 @@ export type WritingHand = "off" | "left" | "right";
 export type ToolbarAlignment = "writing-hand" | "center" | "left" | "right";
 export type InkLocation = "root" | "same" | "subfolder" | "fixed";
 export type InkTool = "pen" | "highlighter";
-export type CanvasLayout = "center" | "left" | "left-scroll";
+export type CanvasLayout = "center" | "left";
 export type RegionDisplay = "hidden" | "icon" | "border" | "full";
 
 export const NOTE_ZOOM_MIN = 0.1;
 export const NOTE_ZOOM_MAX = 2.5;
 export const NOTE_ZOOM_FINE_STEP = 0.05;
+
+export function normalizeCanvasLayout(layout: unknown): CanvasLayout | undefined {
+  if (layout === "left-scroll") return "left";
+  if (layout === "left" || layout === "center") return layout;
+  return undefined;
+}
 
 export function clampNoteZoom(zoom: number): number {
   return Number.isFinite(zoom) ? Math.max(NOTE_ZOOM_MIN, Math.min(NOTE_ZOOM_MAX, zoom)) : 1;
@@ -88,7 +94,7 @@ export interface InkFileData {
   floatingImages?: FloatingImagePlacement[];
   verticalSpaces?: VerticalSpace[];
   snapshotRegions?: SnapshotRegion[];
-  canvasLayout?: CanvasLayout;
+  canvasLayout?: CanvasLayout | "left-scroll";
   revisions?: InkFileRevisions;
 }
 
